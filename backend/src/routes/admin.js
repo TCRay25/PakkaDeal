@@ -1,44 +1,74 @@
 import { Router } from "express";
-import { q, one } from "../db.js";
+import { q, one, isSqliteDb } from "../db.js";
 import { adminOnly, auth, fail } from "../http.js";
 
 const router = Router();
 router.use(auth, adminOnly);
 
 router.get("/overview", async (_req, res) => {
-  const sums = await one(`
-    select
-      coalesce(sum(deposit) filter (where status in ('held', 'shipped', 'delivered', 'return_requested', 'return_shipped', 'disputed')), 0) as held_amount,
-      count(*) filter (where status in ('held', 'shipped', 'delivered', 'return_requested', 'return_shipped', 'disputed')) as held_count,
-      coalesce(sum(seller_payout) filter (where status = 'released'), 0) as released_amount,
-      count(*) filter (where status = 'released') as released_count,
-      coalesce(sum(total_amount) filter (where status = 'refunded'), 0) as refunded_amount,
-      count(*) filter (where status = 'refunded') as refunded_count,
-      coalesce(sum(fee_amount) filter (where status in ('released', 'refunded')), 0) as fee_earned,
-      count(*) as total_deals
-    from deals
-  `);
+  try {
+    let sums = null;
+    try {
+      sums = await one(`
+        select
+          coalesce(sum(case when status in ('held', 'shipped', 'delivered', 'return_requested', 'return_shipped', 'disputed') then coalesce(deposit, total_amount, 0) else 0 end), 0) as held_amount,
+          count(case when status in ('held', 'shipped', 'delivered', 'return_requested', 'return_shipped', 'disputed') then 1 else null end) as held_count,
+          coalesce(sum(case when status = 'released' then coalesce(seller_payout, total_amount - fee_amount, 0) else 0 end), 0) as released_amount,
+          count(case when status = 'released' then 1 else null end) as released_count,
+          coalesce(sum(case when status = 'refunded' then coalesce(total_amount, 0) else 0 end), 0) as refunded_amount,
+          count(case when status = 'refunded' then 1 else null end) as refunded_count,
+          coalesce(sum(case when status in ('released', 'refunded') then coalesce(fee_amount, 0) else 0 end), 0) as fee_earned,
+          count(*) as total_deals
+        from deals
+      `);
+    } catch (dealErr) {
+      console.warn("Detailed deals aggregate failed, falling back to safe defaults:", dealErr.message);
+      const countRow = await one("select count(*) as total_deals from deals");
+      sums = {
+        held_amount: 0,
+        held_count: 0,
+        released_amount: 0,
+        released_count: 0,
+        refunded_amount: 0,
+        refunded_count: 0,
+        fee_earned: 0,
+        total_deals: countRow?.total_deals || 0,
+      };
+    }
 
-  const openDisputes = await one("select count(*) as n from disputes where status='open'");
-  const totalUsers = await one("select count(*) as n from users");
+    const openDisputes = await one("select count(*) as n from disputes where status='open'");
+    const totalUsers = await one("select count(*) as n from users");
 
-  const daily = await q(`
-    select
-      strftime('%Y-%m-%d', created_at) as day,
-      count(*) as deals,
-      coalesce(sum(total_amount), 0) as total_volume
-    from deals
-    where created_at > datetime('now', '-30 days')
-    group by 1
-    order by 1 asc
-  `);
+    const dailySql = isSqliteDb()
+      ? `select
+           strftime('%Y-%m-%d', created_at) as day,
+           count(*) as deals,
+           coalesce(sum(total_amount), 0) as total_volume
+         from deals
+         where created_at > datetime('now', '-30 days')
+         group by 1
+         order by 1 asc`
+      : `select
+           to_char(created_at at time zone 'Asia/Dhaka', 'YYYY-MM-DD') as day,
+           count(*) as deals,
+           coalesce(sum(total_amount), 0) as total_volume
+         from deals
+         where created_at > now() - interval '30 days'
+         group by 1
+         order by 1 asc`;
 
-  res.json({
-    ...sums,
-    open_disputes: openDisputes?.n || 0,
-    total_users: totalUsers?.n || 0,
-    daily: daily || [],
-  });
+    const daily = await q(dailySql);
+
+    res.json({
+      ...sums,
+      open_disputes: openDisputes?.n || 0,
+      total_users: totalUsers?.n || 0,
+      daily: daily || [],
+    });
+  } catch (err) {
+    console.error("Admin overview error:", err);
+    res.status(500).json({ detail: "Failed to load overview: " + err.message });
+  }
 });
 
 router.get("/deals", async (req, res) => {

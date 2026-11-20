@@ -26,8 +26,10 @@ export default function Dashboard() {
 
   if (!user) return null;
 
-  const isSeller = user.role === "seller";
-  const activeDeals = deals.filter((d) => ["created", "held", "shipped", "delivered", "return_requested", "disputed"].includes(d.status));
+  const trustScore = Math.max(user.seller_trust, user.buyer_trust, 70);
+  const activeDeals = deals.filter((d) =>
+    ["created", "held", "shipped", "delivered", "return_requested", "disputed"].includes(d.status)
+  );
   const totalHeld = deals
     .filter((d) => ["held", "shipped", "delivered", "disputed"].includes(d.status))
     .reduce((acc, d) => acc + (d.deposit || d.total_amount || 0), 0);
@@ -40,8 +42,7 @@ export default function Dashboard() {
             {t("dashboard")}
           </h1>
           <p className="text-sm text-neutral-500">
-            Welcome back, {user.name || user.phone}. You are currently viewing as{" "}
-            <strong>{isSeller ? t("roleSeller") : t("roleBuyer")}</strong>.
+            Welcome back, {user.name || user.phone}. Create or manage escrow deals with any counterparty.
           </p>
         </div>
         <Link href="/dashboard/new" className="btn text-sm">
@@ -64,11 +65,9 @@ export default function Dashboard() {
         </div>
 
         <div className="box p-4 border border-neutral-200 dark:border-neutral-800 space-y-1">
-          <span className="text-xs uppercase font-semibold text-neutral-500">
-            {isSeller ? t("sellerTrust") : t("buyerTrust")}
-          </span>
+          <span className="text-xs uppercase font-semibold text-neutral-500">Trust Score</span>
           <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-            {isSeller ? user.seller_trust : user.buyer_trust} / 100
+            {trustScore} / 100
           </div>
           <span className="text-xs text-neutral-400">Verified platform rating</span>
         </div>
@@ -94,7 +93,7 @@ export default function Dashboard() {
         ) : activeDeals.length === 0 ? (
           <div className="box p-8 text-center space-y-3">
             <p className="text-sm text-neutral-500">
-              {isSeller ? t("noDealsSeller") : t("noDealsBuyer")}
+              No active deals right now. You can create a deal with any buyer, seller, or partner.
             </p>
             <Link href="/dashboard/new" className="btn text-xs inline-block">
               {t("createDeal")}
@@ -105,8 +104,8 @@ export default function Dashboard() {
             <table className="w-full text-left text-sm">
               <thead className="bg-neutral-50 dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 text-xs uppercase font-semibold text-neutral-500">
                 <tr>
-                  <th className="px-4 py-3">Code / Product</th>
-                  <th className="px-4 py-3">Category</th>
+                  <th className="px-4 py-3">Code / Title</th>
+                  <th className="px-4 py-3">Type</th>
                   <th className="px-4 py-3">Counterparty</th>
                   <th className="px-4 py-3">Total Escrow</th>
                   <th className="px-4 py-3">Status</th>
@@ -114,41 +113,44 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
-                {activeDeals.slice(0, 6).map((deal) => (
-                  <tr key={deal.id} className="hover:bg-neutral-50/50 dark:hover:bg-neutral-900/50">
-                    <td className="px-4 py-3 font-medium">
-                      <div className="font-semibold text-neutral-900 dark:text-neutral-100">{deal.product}</div>
-                      <div className="text-xs font-mono text-neutral-500">{deal.code}</div>
-                    </td>
-                    <td className="px-4 py-3 text-xs uppercase text-neutral-600 dark:text-neutral-400">
-                      {deal.deal_type}
-                    </td>
-                    <td className="px-4 py-3 text-xs">
-                      {isSeller ? (
-                        <>
-                          <div className="font-medium">{deal.buyer_name}</div>
-                          <div className="text-neutral-500 font-mono">{deal.buyer_phone}</div>
-                        </>
-                      ) : (
-                        <>
-                          <div className="font-medium">{deal.page_name || deal.seller_name || "Seller"}</div>
-                          <div className="text-neutral-500 font-mono">ID #{deal.seller_id}</div>
-                        </>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 font-mono font-semibold text-neutral-900 dark:text-neutral-100">
-                      {deal.total_amount.toLocaleString()} BDT
-                    </td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={deal.status} />
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <Link href={`/deal/${deal.code}`} className="btn-ghost text-xs py-1 px-2.5">
-                        {t("open")}
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
+                {activeDeals.slice(0, 6).map((deal) => {
+                  const isCreator = deal.seller_id === user.id;
+                  return (
+                    <tr key={deal.id} className="hover:bg-neutral-50/50 dark:hover:bg-neutral-900/50">
+                      <td className="px-4 py-3 font-medium">
+                        <div className="font-semibold text-neutral-900 dark:text-neutral-100">{deal.product}</div>
+                        <div className="text-xs font-mono text-neutral-500">{deal.code}</div>
+                      </td>
+                      <td className="px-4 py-3 text-xs uppercase text-neutral-600 dark:text-neutral-400">
+                        {deal.deal_type}
+                      </td>
+                      <td className="px-4 py-3 text-xs">
+                        {isCreator ? (
+                          <>
+                            <div className="font-medium">{deal.buyer_name}</div>
+                            <div className="text-neutral-500 font-mono">{deal.buyer_phone}</div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="font-medium">{deal.page_name || deal.seller_name || "Creator"}</div>
+                            <div className="text-neutral-500 font-mono">ID #{deal.seller_id}</div>
+                          </>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 font-mono font-semibold text-neutral-900 dark:text-neutral-100">
+                        {deal.total_amount.toLocaleString()} BDT
+                      </td>
+                      <td className="px-4 py-3">
+                        <StatusBadge status={deal.status} />
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <Link href={`/deal/${deal.code}`} className="btn-ghost text-xs py-1 px-2.5">
+                          {t("open")}
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

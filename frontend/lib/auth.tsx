@@ -1,12 +1,12 @@
 "use client";
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { api, getToken, post } from "./api";
+import { api, getToken } from "./api";
 
 export type User = {
   id: number;
   phone: string;
   name: string;
-  role: "seller" | "buyer";
+  role: string;
   page_name: string;
   page_url: string;
   seller_trust: number;
@@ -20,7 +20,6 @@ type AuthContextType = {
   login: (token: string) => Promise<void>;
   logout: () => void;
   refresh: () => Promise<void>;
-  switchRole: (role: "seller" | "buyer") => Promise<void>;
 };
 
 const Ctx = createContext<AuthContextType>(null as any);
@@ -68,18 +67,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await load();
   };
 
-  const switchRole = async (targetRole: "seller" | "buyer") => {
-    try {
-      const res = await post("/auth/switch-role", { role: targetRole });
-      setUser(res.user);
-      setAdmin(res.is_admin);
-    } catch (err: any) {
-      console.error("Failed to switch role:", err.message);
-    }
-  };
-
   return (
-    <Ctx.Provider value={{ user, isAdmin, ready, login, logout, refresh, switchRole }}>
+    <Ctx.Provider value={{ user, isAdmin, ready, login, logout, refresh }}>
       {children}
     </Ctx.Provider>
   );

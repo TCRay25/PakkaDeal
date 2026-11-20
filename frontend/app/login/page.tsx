@@ -12,7 +12,6 @@ export default function Login() {
 
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
-  const [role, setRole] = useState<"seller" | "buyer">("seller");
   const [otp, setOtp] = useState("");
   const [step, setStep] = useState<"phone" | "otp">("phone");
   const [err, setErr] = useState("");
@@ -25,7 +24,7 @@ export default function Login() {
     try {
       await post("/auth/send-otp", { phone });
       setStep("otp");
-      setOtp("123456"); // Pre-fill demo OTP for convenience
+      setOtp("123456");
     } catch (x: any) {
       setErr(x.message);
     } finally {
@@ -38,7 +37,7 @@ export default function Login() {
     setErr("");
     setLoading(true);
     try {
-      const r = await post("/auth/verify", { phone, otp, name, role });
+      const r = await post("/auth/verify", { phone, otp, name });
       await login(r.token);
       if (r.is_admin) {
         router.push("/admin");
@@ -52,10 +51,9 @@ export default function Login() {
     }
   }
 
-  function quickFill(quickPhone: string, quickName: string, quickRole: "seller" | "buyer") {
+  function quickFill(quickPhone: string, quickName: string) {
     setPhone(quickPhone);
     setName(quickName);
-    setRole(quickRole);
     setErr("");
   }
 
@@ -71,28 +69,28 @@ export default function Login() {
       {/* Quick Demo Logins */}
       <div className="box p-4 bg-neutral-50 dark:bg-neutral-900 space-y-2 border border-neutral-300 dark:border-neutral-700">
         <div className="text-xs uppercase font-bold text-neutral-500 tracking-wider">
-          Quick Demo Accounts
+          Demo Accounts
         </div>
         <div className="grid grid-cols-1 gap-2">
           <button
             type="button"
-            onClick={() => quickFill("01711223344", "Rahim Chowdhury", "seller")}
+            onClick={() => quickFill("01711223344", "Rahim Chowdhury")}
             className="btn-ghost text-xs justify-between w-full"
           >
-            <span>{t("loginQuickSeller")}</span>
+            <span>Rahim Chowdhury</span>
             <span className="font-mono text-neutral-400">01711223344</span>
           </button>
           <button
             type="button"
-            onClick={() => quickFill("01755667788", "Nusrat Jahan", "buyer")}
+            onClick={() => quickFill("01755667788", "Nusrat Jahan")}
             className="btn-ghost text-xs justify-between w-full"
           >
-            <span>{t("loginQuickBuyer")}</span>
+            <span>Nusrat Jahan</span>
             <span className="font-mono text-neutral-400">01755667788</span>
           </button>
           <button
             type="button"
-            onClick={() => quickFill("01700000000", "PakkaDeal Admin", "seller")}
+            onClick={() => quickFill("01700000000", "PakkaDeal Admin")}
             className="btn-ghost text-xs justify-between w-full border-accent/40"
           >
             <span className="font-semibold text-accent">{t("loginQuickAdmin")}</span>
@@ -104,47 +102,19 @@ export default function Login() {
       {step === "phone" ? (
         <form onSubmit={sendOtp} className="box space-y-4">
           <div>
-            <label>{t("iAm")}</label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setRole("seller")}
-                className={`py-2 text-xs font-semibold border ${
-                  role === "seller"
-                    ? "border-accent bg-accent text-white"
-                    : "border-neutral-300 dark:border-neutral-700 bg-transparent text-neutral-700 dark:text-neutral-300"
-                }`}
-              >
-                {t("roleSeller")}
-              </button>
-              <button
-                type="button"
-                onClick={() => setRole("buyer")}
-                className={`py-2 text-xs font-semibold border ${
-                  role === "buyer"
-                    ? "border-accent bg-accent text-white"
-                    : "border-neutral-300 dark:border-neutral-700 bg-transparent text-neutral-700 dark:text-neutral-300"
-                }`}
-              >
-                {t("roleBuyer")}
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <label htmlFor="user-name-input">{t("yourName")}</label>
+            <label htmlFor="login-name-input">Your Name or Shop Name (Optional)</label>
             <input
-              id="user-name-input"
+              id="login-name-input"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Rahim Chowdhury or Gadget Shop"
+              placeholder="e.g. Rahim Chowdhury"
             />
           </div>
 
           <div>
-            <label htmlFor="user-phone-input">{t("phone")}</label>
+            <label htmlFor="login-phone-input">{t("phone")}</label>
             <input
-              id="user-phone-input"
+              id="login-phone-input"
               required
               inputMode="tel"
               placeholder="01XXXXXXXXX"
@@ -167,9 +137,9 @@ export default function Login() {
           </div>
 
           <div>
-            <label htmlFor="user-code-input">{t("code")}</label>
+            <label htmlFor="login-code-input">{t("code")}</label>
             <input
-              id="user-code-input"
+              id="login-code-input"
               required
               inputMode="numeric"
               value={otp}

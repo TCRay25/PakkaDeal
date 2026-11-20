@@ -15,6 +15,7 @@ import {
   applyHandoverConfirmation,
   checkAllTimeouts,
   calculateFee,
+  getSetting,
 } from "../services/settle.js";
 
 const router = Router();
@@ -50,6 +51,15 @@ async function view(deal, user) {
   const isBuyer = !!user && user.phone === deal.buyer_phone;
   const isAdminUser = !!user && config.adminPhones.includes(user.phone);
 
+  const escrowAccounts = {
+    bkash: await getSetting("escrow_bkash_merchant", "01711-000000"),
+    nagad: await getSetting("escrow_nagad_merchant", "01911-000000"),
+    rocket: await getSetting("escrow_rocket_merchant", "01811-000000"),
+    bankName: await getSetting("escrow_bank_name", "City Bank Ltd (Gulshan Branch)"),
+    bankAccount: await getSetting("escrow_bank_account", "PakkaDeal Escrow Services Ltd (A/C: 150239482001)"),
+    instructions: await getSetting("escrow_payment_instructions", "বিকাশ বা নগদ অ্যাপের 'Make Payment' অপশন থেকে পাক্কাডিল অফিসিয়াল এসক্রো মার্চেন্ট নাম্বারে সম্পূর্ণ টাকা পেমেন্ট করুন। এরপর প্রাপ্ত Transaction ID (TrxID) এবং আপনার প্রেরক নম্বর নিচে বসিয়ে কনফার্ম করুন। টাকা সরাসরি পাক্কা ডিল এসক্রো ভল্টে সুরক্ষিত থাকবে।"),
+  };
+
   const { buyer_phone, ...rest } = deal;
   return {
     deal: {
@@ -72,6 +82,7 @@ async function view(deal, user) {
       is_buyer: isBuyer,
       is_admin: isAdminUser,
     },
+    escrow_accounts: escrowAccounts,
   };
 }
 
@@ -193,11 +204,19 @@ router.post("/:code/pay", auth, async (req, res) => {
   if (req.user.phone !== deal.buyer_phone) fail(403, "Only the designated buyer can pay for this deal");
   if (deal.status !== "created") fail(400, "Deal cannot be paid in status: " + deal.status);
 
-  const updated = await applyPayment(deal, req.body.payment_method || "bKash");
+  const paymentMethod = (req.body.payment_method || "bKash").trim();
+  const senderNumber = (req.body.sender_number || req.user.phone).trim();
+  const trxId = (req.body.trx_id || `MOCK-${Date.now().toString(36).toUpperCase()}`).trim();
+
+  if (senderNumber && !PHONE.test(senderNumber)) {
+    fail(400, "Please provide a valid 11-digit sender phone number");
+  }
+
+  const updated = await applyPayment(deal, { paymentMethod, senderNumber, trxId });
   res.json(await view(updated, req.user));
 });
 
-router.post("/:code/ship", auth, role("seller"), async (req, res) => {
+router.post("/:code/ship", auth, async (req, res) => {
   const deal = await loadDeal(req.params.code);
   if (deal.seller_id !== req.user.id) fail(403, "Not your deal");
   if (deal.status !== "held") fail(400, "Deal is not in held status");

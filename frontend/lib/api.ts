@@ -78,6 +78,9 @@ export type Deal = {
   buyer_trust: number;
   ship_by: string | null;
   confirm_by: string | null;
+  payment_method?: string;
+  payment_sender?: string;
+  payment_trx_id?: string;
   created_at: string;
   updated_at: string;
   page_name?: string;
@@ -130,6 +133,14 @@ export type DealDetailResponse = {
     is_seller: boolean;
     is_buyer: boolean;
     is_admin: boolean;
+  };
+  escrow_accounts?: {
+    bkash: string;
+    nagad: string;
+    rocket: string;
+    bankName: string;
+    bankAccount: string;
+    instructions: string;
   };
 };
 

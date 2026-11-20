@@ -52,6 +52,97 @@ export default function AdminSettingsPage() {
         <p className="text-sm text-neutral-500">{t("loading")}</p>
       ) : (
         <form onSubmit={handleSave} className="space-y-6">
+          {/* Escrow Merchant & Payment Gateway Numbers */}
+          <div className="box p-6 border-2 border-accent bg-accent/5 space-y-4">
+            <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 pb-2">
+              <div>
+                <h2 className="text-sm font-bold uppercase tracking-wider text-neutral-900 dark:text-neutral-100">
+                  PakkaDeal Official Escrow Payment Accounts (এসক্রো মার্চেন্ট নম্বর)
+                </h2>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  The merchant numbers and bank account where buyers will deposit escrow funds to hold securely during a deal.
+                </p>
+              </div>
+              <span className="px-2 py-0.5 text-xs bg-accent text-white font-mono font-bold">
+                Escrow Vault
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label htmlFor="escrow-bkash-merchant">bKash Merchant / Wallet Number</label>
+                <input
+                  id="escrow-bkash-merchant"
+                  value={settings["escrow_bkash_merchant"] || "01711-000000"}
+                  onChange={(e) => handleChange("escrow_bkash_merchant", e.target.value)}
+                  placeholder="01711-000000"
+                  className="font-mono text-sm bg-white dark:bg-black"
+                />
+                <span className="text-[11px] text-neutral-500 mt-1 block">Official bKash escrow recipient</span>
+              </div>
+
+              <div>
+                <label htmlFor="escrow-nagad-merchant">Nagad Merchant / Wallet Number</label>
+                <input
+                  id="escrow-nagad-merchant"
+                  value={settings["escrow_nagad_merchant"] || "01911-000000"}
+                  onChange={(e) => handleChange("escrow_nagad_merchant", e.target.value)}
+                  placeholder="01911-000000"
+                  className="font-mono text-sm bg-white dark:bg-black"
+                />
+                <span className="text-[11px] text-neutral-500 mt-1 block">Official Nagad escrow recipient</span>
+              </div>
+
+              <div>
+                <label htmlFor="escrow-rocket-merchant">Rocket / Upay Number</label>
+                <input
+                  id="escrow-rocket-merchant"
+                  value={settings["escrow_rocket_merchant"] || "01811-000000"}
+                  onChange={(e) => handleChange("escrow_rocket_merchant", e.target.value)}
+                  placeholder="01811-000000"
+                  className="font-mono text-sm bg-white dark:bg-black"
+                />
+                <span className="text-[11px] text-neutral-500 mt-1 block">Official Rocket/DBBL recipient</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-neutral-200 dark:border-neutral-800">
+              <div>
+                <label htmlFor="escrow-bank-name">Escrow Bank Partner</label>
+                <input
+                  id="escrow-bank-name"
+                  value={settings["escrow_bank_name"] || "City Bank Ltd (Gulshan Branch)"}
+                  onChange={(e) => handleChange("escrow_bank_name", e.target.value)}
+                  placeholder="e.g. City Bank Ltd"
+                  className="text-sm bg-white dark:bg-black"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="escrow-bank-account">Escrow Bank Account & Holder</label>
+                <input
+                  id="escrow-bank-account"
+                  value={settings["escrow_bank_account"] || "PakkaDeal Escrow Services Ltd (A/C: 150239482001)"}
+                  onChange={(e) => handleChange("escrow_bank_account", e.target.value)}
+                  placeholder="Company name, A/C number & branch"
+                  className="font-mono text-sm bg-white dark:bg-black"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="escrow-instructions">Buyer Checkout Instructions (Bangla / English)</label>
+              <textarea
+                id="escrow-instructions"
+                rows={2}
+                value={settings["escrow_payment_instructions"] || "বিকাশ বা নগদ অ্যাপের 'Make Payment' অপশন থেকে পাক্কাডিল অফিসিয়াল এসক্রো মার্চেন্ট নাম্বারে সম্পূর্ণ টাকা পেমেন্ট করুন। এরপর প্রাপ্ত Transaction ID (TrxID) এবং আপনার প্রেরক নম্বর নিচে বসিয়ে কনফার্ম করুন। টাকা সরাসরি পাক্কা ডিল এসক্রো ভল্টে সুরক্ষিত থাকবে।"}
+                onChange={(e) => handleChange("escrow_payment_instructions", e.target.value)}
+                className="text-xs bg-white dark:bg-black"
+              />
+              <span className="text-[11px] text-neutral-500 mt-0.5 block">Instructions shown to the buyer on the payment screen.</span>
+            </div>
+          </div>
+
           <div className="box p-6 border border-neutral-200 dark:border-neutral-800 space-y-4">
             <h2 className="text-sm font-bold uppercase tracking-wider text-neutral-800 dark:text-neutral-200 border-b border-neutral-200 dark:border-neutral-800 pb-2">
               Fee & Revenue Parameters

@@ -48,6 +48,8 @@ function pgToSqlite(sql, params = []) {
   return { sql: s, params: reordered };
 }
 
+export const isSqliteDb = () => isSqlite;
+
 export const q = async (text, params = []) => {
   if (!initialized) {
     await initDb();
@@ -349,7 +351,145 @@ export async function initDb() {
   }
 
   initialized = true;
+
+  // Run comprehensive database migrations for existing installations
+  await runMigrations();
+
   await seedInitialData();
+}
+
+async function runMigrations() {
+  try {
+    if (isSqlite) {
+      const db = getSqliteDb();
+      const dealCols = db.prepare("pragma table_info(deals)").all().map(c => c.name);
+      const neededDealCols = [
+        ["deal_type", "text not null default 'product'"],
+        ["details", "text not null default ''"],
+        ["delivery_charge", "int not null default 0"],
+        ["total_amount", "int not null default 0"],
+        ["fee_amount", "int not null default 0"],
+        ["seller_payout", "int not null default 0"],
+        ["deposit", "int not null default 0"],
+        ["return_policy", "text not null default 'buyer_pays'"],
+        ["return_charge", "int not null default 0"],
+        ["outcome", "text not null default ''"],
+        ["courier_name", "text not null default 'Steadfast'"],
+        ["tracking_id", "text not null default ''"],
+        ["courier_status", "text not null default ''"],
+        ["return_courier_name", "text not null default ''"],
+        ["return_tracking_id", "text not null default ''"],
+        ["return_courier_status", "text not null default ''"],
+        ["seller_confirmed", "int not null default 0"],
+        ["buyer_confirmed", "int not null default 0"],
+        ["risk_score", "int not null default 0"],
+        ["risk_reasons", "text not null default ''"],
+        ["buyer_trust", "int not null default 60"],
+        ["ship_by", "text"],
+        ["confirm_by", "text"],
+        ["payment_method", "text not null default 'bKash'"],
+        ["payment_sender", "text not null default ''"],
+        ["payment_trx_id", "text not null default ''"],
+      ];
+      for (const [col, colType] of neededDealCols) {
+        if (!dealCols.includes(col)) {
+          db.exec(`alter table deals add column ${col} ${colType}`);
+        }
+      }
+
+      const userCols = db.prepare("pragma table_info(users)").all().map(c => c.name);
+      const neededUserCols = [
+        ["page_name", "text not null default ''"],
+        ["page_url", "text not null default ''"],
+        ["seller_trust", "int not null default 70"],
+        ["buyer_trust", "int not null default 60"],
+        ["is_suspended", "int not null default 0"],
+      ];
+      for (const [col, colType] of neededUserCols) {
+        if (!userCols.includes(col)) {
+          db.exec(`alter table users add column ${col} ${colType}`);
+        }
+      }
+
+      const disputeCols = db.prepare("pragma table_info(disputes)").all().map(c => c.name);
+      const neededDisputeCols = [
+        ["raised_by_phone", "text not null default ''"],
+        ["category", "text not null default ''"],
+        ["evidence_text", "text not null default ''"],
+        ["photo_type", "text not null default ''"],
+        ["ai_summary", "text not null default ''"],
+        ["ai_recommendation", "text not null default 'review'"],
+        ["admin_notes", "text not null default ''"],
+      ];
+      for (const [col, colType] of neededDisputeCols) {
+        if (!disputeCols.includes(col)) {
+          db.exec(`alter table disputes add column ${col} ${colType}`);
+        }
+      }
+
+      db.exec(`update deals set seller_payout = max(total_amount - fee_amount, 0) where (seller_payout is null or seller_payout = 0) and total_amount > 0`);
+    } else if (pgPool) {
+      const neededDealCols = [
+        ["deal_type", "text not null default 'product'"],
+        ["details", "text not null default ''"],
+        ["delivery_charge", "int not null default 0"],
+        ["total_amount", "int not null default 0"],
+        ["fee_amount", "int not null default 0"],
+        ["seller_payout", "int not null default 0"],
+        ["deposit", "int not null default 0"],
+        ["return_policy", "text not null default 'buyer_pays'"],
+        ["return_charge", "int not null default 0"],
+        ["outcome", "text not null default ''"],
+        ["courier_name", "text not null default 'Steadfast'"],
+        ["tracking_id", "text not null default ''"],
+        ["courier_status", "text not null default ''"],
+        ["return_courier_name", "text not null default ''"],
+        ["return_tracking_id", "text not null default ''"],
+        ["return_courier_status", "text not null default ''"],
+        ["seller_confirmed", "int not null default 0"],
+        ["buyer_confirmed", "int not null default 0"],
+        ["risk_score", "int not null default 0"],
+        ["risk_reasons", "text not null default ''"],
+        ["buyer_trust", "int not null default 60"],
+        ["ship_by", "timestamptz"],
+        ["confirm_by", "timestamptz"],
+        ["payment_method", "text not null default 'bKash'"],
+        ["payment_sender", "text not null default ''"],
+        ["payment_trx_id", "text not null default ''"],
+      ];
+      for (const [col, colType] of neededDealCols) {
+        await pgPool.query(`alter table deals add column if not exists ${col} ${colType}`);
+      }
+
+      const neededUserCols = [
+        ["page_name", "text not null default ''"],
+        ["page_url", "text not null default ''"],
+        ["seller_trust", "int not null default 70"],
+        ["buyer_trust", "int not null default 60"],
+        ["is_suspended", "int not null default 0"],
+      ];
+      for (const [col, colType] of neededUserCols) {
+        await pgPool.query(`alter table users add column if not exists ${col} ${colType}`);
+      }
+
+      const neededDisputeCols = [
+        ["raised_by_phone", "text not null default ''"],
+        ["category", "text not null default ''"],
+        ["evidence_text", "text not null default ''"],
+        ["photo_type", "text not null default ''"],
+        ["ai_summary", "text not null default ''"],
+        ["ai_recommendation", "text not null default 'review'"],
+        ["admin_notes", "text not null default ''"],
+      ];
+      for (const [col, colType] of neededDisputeCols) {
+        await pgPool.query(`alter table disputes add column if not exists ${col} ${colType}`);
+      }
+
+      await pgPool.query(`update deals set seller_payout = greatest(total_amount - fee_amount, 0) where (seller_payout is null or seller_payout = 0) and total_amount > 0`);
+    }
+  } catch (migErr) {
+    console.warn("Migration warning:", migErr.message);
+  }
 }
 
 async function seedInitialData() {
@@ -364,6 +504,22 @@ async function seedInitialData() {
       ["return_deduct_shipping", "true", "Whether buyer or seller pays return fee according to deal policy"],
     ];
     for (const [key, val, desc] of defaultSettings) {
+      await q("insert into settings(key, value, description) values($1, $2, $3)", [key, val, desc]);
+    }
+  }
+
+  // Ensure official escrow payment merchant settings exist
+  const merchantSettings = [
+    ["escrow_bkash_merchant", "01711-000000", "PakkaDeal Official bKash Escrow Merchant / Payment Number"],
+    ["escrow_nagad_merchant", "01911-000000", "PakkaDeal Official Nagad Escrow Merchant / Payment Number"],
+    ["escrow_rocket_merchant", "01811-000000", "PakkaDeal Official Rocket / Upay Number"],
+    ["escrow_bank_name", "City Bank Ltd (Gulshan Branch)", "Official Escrow Bank Partner Name"],
+    ["escrow_bank_account", "PakkaDeal Escrow Services Ltd (A/C: 150239482001)", "Escrow Bank Account & Holder Details"],
+    ["escrow_payment_instructions", "বিকাশ বা নগদ অ্যাপের 'Make Payment' অপশন থেকে পাক্কাডিল অফিসিয়াল এসক্রো মার্চেন্ট নাম্বারে সম্পূর্ণ টাকা পেমেন্ট করুন। এরপর প্রাপ্ত Transaction ID (TrxID) এবং আপনার প্রেরক নম্বর নিচে বসিয়ে কনফার্ম করুন। টাকা সরাসরি পাক্কা ডিল এসক্রো ভল্টে সুরক্ষিত থাকবে।", "Official instructions shown to buyers during escrow checkout"],
+  ];
+  for (const [key, val, desc] of merchantSettings) {
+    const existing = await one("select key from settings where key=$1", [key]);
+    if (!existing) {
       await q("insert into settings(key, value, description) values($1, $2, $3)", [key, val, desc]);
     }
   }

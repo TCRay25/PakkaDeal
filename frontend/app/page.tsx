@@ -3,6 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useI18n } from "@/lib/i18n";
 import Logo from "@/components/Logo";
+import AnimatedHeroLogo from "@/components/AnimatedHeroLogo";
 
 export default function Home() {
   const { t } = useI18n();
@@ -12,15 +13,15 @@ export default function Home() {
 
   return (
     <div className="w-full">
-      {/* Hero Section */}
-      <section className="border-b border-neutral-200 dark:border-neutral-800 py-16 lg:py-24 bg-white dark:bg-black">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+      {/* Hero Section - Full Viewport First Page */}
+      <section className="border-b border-neutral-200 dark:border-neutral-800 min-h-[calc(100vh-65px)] min-h-[calc(100dvh-65px)] flex flex-col justify-between py-8 lg:py-12 bg-white dark:bg-black">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 w-full my-auto">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
             <div className="lg:col-span-7 space-y-6">
               <div className="inline-block border border-accent/40 bg-accent/5 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-accent">
                 {t("tagline")}
               </div>
-              <h1 className="text-3xl sm:text-5xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100 leading-tight">
+              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100 leading-tight">
                 {t("heroTitle")}
               </h1>
               <p className="text-base sm:text-lg text-neutral-600 dark:text-neutral-400 max-w-2xl leading-relaxed">
@@ -36,47 +37,42 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Visual Escrow Vault Diagram */}
-            <div className="lg:col-span-5">
-              <div className="box border-2 border-neutral-300 dark:border-neutral-700 p-6 space-y-4 bg-neutral-50 dark:bg-neutral-950">
-                <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 pb-3">
-                  <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">Live Escrow Protocol</span>
-                  <span className="px-2 py-0.5 text-xs bg-emerald-600/10 text-emerald-600 border border-emerald-600/30 font-semibold">Active</span>
+            {/* Visual Animated Logo & Escrow Vault Showcase */}
+            <div className="lg:col-span-5 flex flex-col items-center justify-center space-y-5">
+              {/* Animated Logo: Sits directly on the page background without any box or border */}
+              <div className="w-full flex items-center justify-center">
+                <AnimatedHeroLogo />
+              </div>
+
+              {/* Only the 3 Protocol Steps below are in clean boxes */}
+              <div className="w-full space-y-2 text-xs">
+                <div className="box p-2.5 sm:p-3 flex items-center justify-between border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 shadow-sm">
+                  <div>
+                    <span className="text-[10px] text-neutral-400 uppercase font-mono block">Phase 1</span>
+                    <span className="font-semibold text-neutral-900 dark:text-neutral-100">Buyer Pays Escrow Vault</span>
+                  </div>
+                  <span className="font-mono text-accent font-semibold">bKash / Nagad</span>
                 </div>
 
-                <div className="space-y-3 text-sm">
-                  <div className="p-3 border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black flex items-center justify-between">
-                    <div>
-                      <div className="text-xs text-neutral-400 uppercase">Step 1</div>
-                      <div className="font-semibold text-neutral-900 dark:text-neutral-100">Buyer Deposits Funds</div>
-                    </div>
-                    <span className="text-xs font-mono text-accent">bKash / Nagad</span>
+                <div className="p-2.5 sm:p-3 border-2 border-accent bg-accent/5 flex items-center justify-between shadow-sm">
+                  <div>
+                    <span className="text-[10px] text-accent uppercase font-mono font-bold block">Phase 2</span>
+                    <span className="font-semibold text-neutral-900 dark:text-neutral-100">Courier Tracking & Inspection</span>
                   </div>
-
-                  <div className="text-center text-xs font-mono text-neutral-400">↓ Held Securely in Escrow Vault ↓</div>
-
-                  <div className="p-3 border-2 border-accent bg-accent/5 flex items-center justify-between">
-                    <div>
-                      <div className="text-xs text-accent uppercase font-bold">Step 2: Transit & Verification</div>
-                      <div className="font-semibold text-neutral-900 dark:text-neutral-100">Courier Tracking / Handover</div>
-                    </div>
-                    <span className="text-xs font-mono text-accent">3-Day Window</span>
-                  </div>
-
-                  <div className="text-center text-xs font-mono text-neutral-400">↓ Buyer Verifies & Confirms Receipt ↓</div>
-
-                  <div className="p-3 border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black flex items-center justify-between">
-                    <div>
-                      <div className="text-xs text-neutral-400 uppercase">Step 3</div>
-                      <div className="font-semibold text-emerald-600 dark:text-emerald-400">Seller Payout Released (98%)</div>
-                    </div>
-                    <span className="text-xs font-mono text-neutral-500">2% PakkaDeal Fee</span>
-                  </div>
+                  <span className="font-mono text-emerald-600 dark:text-emerald-400 font-semibold">Funds Locked</span>
                 </div>
 
-                <div className="pt-2 text-xs text-neutral-500 border-t border-neutral-200 dark:border-neutral-800 flex justify-between">
+                <div className="box p-2.5 sm:p-3 flex items-center justify-between border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 shadow-sm">
+                  <div>
+                    <span className="text-[10px] text-neutral-400 uppercase font-mono block">Phase 3</span>
+                    <span className="font-semibold text-emerald-600 dark:text-emerald-400">Buyer Confirms → Seller Paid</span>
+                  </div>
+                  <span className="font-mono text-neutral-500 font-semibold">2% PakkaDeal Fee</span>
+                </div>
+
+                <div className="pt-1.5 text-[11px] text-neutral-500 flex justify-between px-1">
                   <span>No Fake Orders</span>
-                  <span>No Advance Scams</span>
+                  <span>No Fake Sellers</span>
                   <span>100% Deterministic</span>
                 </div>
               </div>

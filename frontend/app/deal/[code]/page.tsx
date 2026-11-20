@@ -36,6 +36,12 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
   const [disputePhoto, setDisputePhoto] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // Escrow Payment Gateway Form states
+  const [payMethod, setPayMethod] = useState<"bKash" | "Nagad" | "Rocket" | "Bank">("bKash");
+  const [senderPhone, setSenderPhone] = useState("");
+  const [trxId, setTrxId] = useState("");
+  const [copiedNumber, setCopiedNumber] = useState(false);
+
   const load = () => {
     setLoading(true);
     api<DealDetailResponse>(`/deals/${code}`)
@@ -75,14 +81,27 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
   };
 
   // Actions
-  const handlePay = async () => {
+  const handlePay = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!senderPhone.trim()) {
+      alert("Please enter the sender phone number (প্রেরক নম্বর দিন)");
+      return;
+    }
+    if (!trxId.trim()) {
+      alert("Please enter the Transaction ID (বিকাশ বা নগদ TrxID দিন)");
+      return;
+    }
     setSubmitting(true);
     try {
-      await post(`/deals/${deal.code}/pay`, { payment_method: "bKash" });
+      await post(`/deals/${deal.code}/pay`, {
+        payment_method: payMethod,
+        sender_number: senderPhone.trim(),
+        trx_id: trxId.trim(),
+      });
       setShowPayModal(false);
       load();
     } catch (x: any) {
-      alert(x.message);
+      alert(x.message || "Failed to process escrow deposit");
     } finally {
       setSubmitting(false);
     }
@@ -216,6 +235,35 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                 Vault: {deal.total_amount.toLocaleString()} BDT
               </span>
             </div>
+
+            {/* Escrow Deposit Receipt Proof */}
+            {deal.status !== "created" && (
+              <div className="p-3.5 border border-emerald-500/40 bg-emerald-500/5 space-y-2">
+                <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 pb-1.5">
+                  <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    Escrow Vault Funded & Locked (টাকা পাক্কাডিল ভল্টে সুরক্ষিত)
+                  </span>
+                  <span className="font-mono text-xs font-bold text-neutral-900 dark:text-neutral-100">
+                    {deal.total_amount.toLocaleString()} BDT
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                  <div>
+                    <span className="text-neutral-500 block text-[11px]">Gateway:</span>
+                    <span className="font-semibold">{deal.payment_method || "bKash"} Escrow</span>
+                  </div>
+                  <div>
+                    <span className="text-neutral-500 block text-[11px]">Sender Phone:</span>
+                    <span className="font-mono">{deal.payment_sender || deal.buyer_phone}</span>
+                  </div>
+                  <div>
+                    <span className="text-neutral-500 block text-[11px]">Transaction ID:</span>
+                    <span className="font-mono font-bold text-accent">{deal.payment_trx_id || "TRX-VERIFIED"}</span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* State: created */}
             {deal.status === "created" && (
@@ -526,28 +574,136 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
         </div>
       </div>
 
-      {/* MODAL: Pay with bKash Sandbox */}
+      {/* MODAL: Pay into Escrow with Official Merchant / Account Number */}
       {showPayModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="box w-full max-w-md p-6 border-2 border-accent space-y-4 bg-white dark:bg-black">
+          <form onSubmit={handlePay} className="box w-full max-w-lg p-6 border-2 border-accent space-y-4 bg-white dark:bg-black max-h-[95vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-neutral-200 dark:border-neutral-800 pb-2">
-              <h3 className="font-bold text-base">bKash / Nagad Escrow Gateway</h3>
-              <button onClick={() => setShowPayModal(false)} className="text-neutral-500 hover:text-black dark:hover:text-white">✕</button>
+              <div>
+                <h3 className="font-bold text-base text-neutral-900 dark:text-neutral-100">
+                  PakkaDeal Official Escrow Deposit (টাকা এসক্রো ভল্টে জমা)
+                </h3>
+                <span className="text-[11px] text-accent font-semibold block">
+                  Amount to Lock in Escrow: {deal.total_amount.toLocaleString()} BDT
+                </span>
+              </div>
+              <button type="button" onClick={() => setShowPayModal(false)} className="text-neutral-500 hover:text-black dark:hover:text-white">✕</button>
             </div>
-            <div className="p-3 bg-pink-50 dark:bg-pink-950/30 border border-pink-200 dark:border-pink-900 text-xs space-y-1 text-pink-900 dark:text-pink-100">
-              <strong>bKash Merchant Escrow Checkout (Sandbox)</strong>
-              <p>Amount to lock in escrow: <strong>{deal.total_amount.toLocaleString()} BDT</strong></p>
+
+            {/* Payment Method Selector */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold uppercase text-neutral-500">Select Gateway (পেমেন্ট মাধ্যম বেছে নিন)</label>
+              <div className="grid grid-cols-4 gap-2">
+                {(["bKash", "Nagad", "Rocket", "Bank"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => {
+                      setPayMethod(m);
+                      setCopiedNumber(false);
+                    }}
+                    className={`py-2 px-1 text-xs font-bold border transition-colors ${
+                      payMethod === m
+                        ? "border-accent bg-accent text-white"
+                        : "border-neutral-300 dark:border-neutral-700 hover:border-neutral-400 text-neutral-700 dark:text-neutral-300"
+                    }`}
+                  >
+                    {m === "bKash" ? "bKash বিকাশ" : m === "Nagad" ? "Nagad নগদ" : m === "Rocket" ? "Rocket রকেট" : "Bank ব্যাংক"}
+                  </button>
+                ))}
+              </div>
             </div>
-            <p className="text-xs text-neutral-600 dark:text-neutral-400">
-              Your money will not be credited to the seller until you receive the package and confirm inspection.
-            </p>
-            <div className="flex gap-2">
-              <button onClick={() => setShowPayModal(false)} className="btn-ghost w-1/3">Cancel</button>
-              <button onClick={handlePay} disabled={submitting} className="btn w-2/3">
-                {submitting ? "Processing..." : `Confirm & Deposit ${deal.total_amount} BDT`}
+
+            {/* Official Escrow Merchant / Payment Target Display */}
+            <div className="p-3.5 bg-accent/5 border border-accent/30 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs uppercase font-extrabold text-accent">
+                  PakkaDeal Official {payMethod} Escrow Number:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const num =
+                      payMethod === "bKash"
+                        ? data.escrow_accounts?.bkash || "01711-000000"
+                        : payMethod === "Nagad"
+                        ? data.escrow_accounts?.nagad || "01911-000000"
+                        : payMethod === "Rocket"
+                        ? data.escrow_accounts?.rocket || "01811-000000"
+                        : data.escrow_accounts?.bankAccount || "PakkaDeal Escrow Services Ltd (A/C: 150239482001)";
+                    navigator.clipboard.writeText(num);
+                    setCopiedNumber(true);
+                    setTimeout(() => setCopiedNumber(false), 2500);
+                  }}
+                  className="px-2 py-0.5 text-xs font-semibold bg-white dark:bg-black border border-accent text-accent hover:bg-accent hover:text-white"
+                >
+                  {copiedNumber ? "✓ Copied!" : "Copy Number (কপি)"}
+                </button>
+              </div>
+
+              <div className="font-mono text-base font-extrabold text-neutral-900 dark:text-neutral-100">
+                {payMethod === "bKash" && (data.escrow_accounts?.bkash || "01711-000000")}
+                {payMethod === "Nagad" && (data.escrow_accounts?.nagad || "01911-000000")}
+                {payMethod === "Rocket" && (data.escrow_accounts?.rocket || "01811-000000")}
+                {payMethod === "Bank" && (
+                  <div>
+                    <div>{data.escrow_accounts?.bankName || "City Bank Ltd (Gulshan Branch)"}</div>
+                    <div className="text-xs text-neutral-500">{data.escrow_accounts?.bankAccount || "PakkaDeal Escrow Services Ltd (A/C: 150239482001)"}</div>
+                  </div>
+                )}
+              </div>
+
+              <p className="text-[11px] text-neutral-600 dark:text-neutral-400 leading-relaxed border-t border-accent/20 pt-1.5">
+                {data.escrow_accounts?.instructions ||
+                  "বিকাশ বা নগদ অ্যাপের 'Make Payment' অপশন থেকে পাক্কাডিল অফিসিয়াল এসক্রো মার্চেন্ট নাম্বারে সম্পূর্ণ টাকা পেমেন্ট করুন। এরপর প্রাপ্ত Transaction ID (TrxID) এবং আপনার প্রেরক নম্বর নিচে বসিয়ে কনফার্ম করুন। টাকা সরাসরি পাক্কা ডিল এসক্রো ভল্টে সুরক্ষিত থাকবে।"}
+              </p>
+            </div>
+
+            {/* Inputs: Sender Number & TrxID */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="pay-sender-phone">Your Sender Mobile (প্রেরক নম্বর)</label>
+                <input
+                  id="pay-sender-phone"
+                  required
+                  value={senderPhone || user?.phone || deal.buyer_phone}
+                  onChange={(e) => setSenderPhone(e.target.value)}
+                  placeholder="e.g. 017XXXXXXXX"
+                  className="font-mono text-sm"
+                />
+                <span className="text-[11px] text-neutral-500 mt-0.5 block">যে নম্বর থেকে টাকা পাঠিয়েছেন</span>
+              </div>
+
+              <div>
+                <label htmlFor="pay-trx-id">Transaction ID (TrxID)</label>
+                <input
+                  id="pay-trx-id"
+                  required
+                  value={trxId}
+                  onChange={(e) => setTrxId(e.target.value.toUpperCase())}
+                  placeholder="e.g. BLA9238DK3"
+                  className="font-mono text-sm uppercase"
+                />
+                <span className="text-[11px] text-neutral-500 mt-0.5 block">এসএমএস-এ পাওয়া TrxID</span>
+              </div>
+            </div>
+
+            <div className="p-2.5 bg-neutral-100 dark:bg-neutral-900 text-xs text-neutral-600 dark:text-neutral-400 space-y-1">
+              <strong className="block text-neutral-900 dark:text-neutral-100">🔒 Escrow Protection Guarantee:</strong>
+              <p>
+                আপনার টাকা বিক্রেতার অ্যাকাউন্টে যাবে না; PakkaDeal এর মার্চেন্ট একাউন্টে হোল্ড থাকবে। আপনি পার্সেল হাতে পেয়ে চেক করে কনফার্ম করলে তবেই বিক্রেতা টাকা পাবে।
+              </p>
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <button type="button" onClick={() => setShowPayModal(false)} className="btn-ghost w-1/3">
+                Cancel
+              </button>
+              <button type="submit" disabled={submitting} className="btn w-2/3">
+                {submitting ? "Processing..." : `Confirm & Lock ${deal.total_amount.toLocaleString()} BDT`}
               </button>
             </div>
-          </div>
+          </form>
         </div>
       )}
 

@@ -1,36 +1,106 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, AdminOverview } from "@/lib/api";
+import { api, post, AdminOverview } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import { useAuth } from "@/lib/auth";
 
 export default function AdminOverviewPage() {
   const { t } = useI18n();
+  const { user, isAdmin, ready, login } = useAuth();
   const [data, setData] = useState<AdminOverview | null>(null);
   const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
 
-  useEffect(() => {
+  const loadData = () => {
+    setLoading(true);
+    setErr("");
     api<AdminOverview>("/admin/overview")
       .then(setData)
-      .catch(() => setData(null))
+      .catch((e: any) => {
+        setErr(e.message || "Failed to load admin overview data.");
+        setData(null);
+      })
       .finally(() => setLoading(false));
-  }, []);
+  };
 
-  if (loading) {
-    return <p className="text-sm text-neutral-500">{t("loading")}</p>;
+  useEffect(() => {
+    if (ready && isAdmin) {
+      loadData();
+    } else if (ready && !isAdmin) {
+      setLoading(false);
+    }
+  }, [ready, isAdmin]);
+
+  const quickLoginAdmin = async () => {
+    try {
+      setLoading(true);
+      const res = await post("/auth/verify", { phone: "01700000000", otp: "123456" });
+      await login(res.token);
+      loadData();
+    } catch (x: any) {
+      setErr(x.message || "Failed to log in as admin");
+      setLoading(false);
+    }
+  };
+
+  if (!ready || loading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <p className="text-sm text-neutral-500">{t("loading")}</p>
+      </div>
+    );
   }
 
-  if (!data) {
-    return <p className="text-sm text-red-500">Failed to load admin overview data.</p>;
+  if (!user || !isAdmin) {
+    return (
+      <div className="mx-auto max-w-md py-12 px-4 space-y-4">
+        <div className="box p-6 border-2 border-red-500 bg-red-500/5 space-y-3">
+          <h2 className="text-base font-bold text-red-600">Admin Access Required</h2>
+          <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed">
+            {user
+              ? `You are logged in with ${user.phone}, which does not have administrator privileges.`
+              : "Please sign in with an authorized administrator mobile number."}
+          </p>
+          <div className="pt-2">
+            <button onClick={quickLoginAdmin} className="btn text-xs py-2 px-4 w-full">
+              Sign In as Demo Admin (01700000000)
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (err || !data) {
+    return (
+      <div className="mx-auto max-w-md py-12 px-4 space-y-4">
+        <div className="box p-6 border-2 border-amber-500 bg-amber-500/5 space-y-3">
+          <h2 className="text-base font-bold text-amber-600">Overview Connection Error</h2>
+          <p className="text-xs text-neutral-600 dark:text-neutral-400">{err || "Failed to load admin overview data."}</p>
+          <p className="text-xs text-neutral-500">
+            Please make sure the backend server is running on port 8000 (<code>cd backend; npm run dev</code>).
+          </p>
+          <button onClick={loadData} className="btn-ghost text-xs py-1.5 px-3">
+            Retry Connection
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="space-y-8">
-      <div className="border-b border-neutral-200 dark:border-neutral-800 pb-4">
-        <h1 className="text-2xl font-bold tracking-tight">System Overview</h1>
-        <p className="text-sm text-neutral-500">
-          Central monitoring dashboard for live escrow funds, transaction volume, revenue, and pending disputes.
-        </p>
+      <div className="border-b border-neutral-200 dark:border-neutral-800 pb-4 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">System Overview</h1>
+          <p className="text-sm text-neutral-500">
+            Central monitoring dashboard for live escrow funds, transaction volume, revenue, and pending disputes.
+          </p>
+        </div>
+        <button onClick={loadData} className="btn-ghost text-xs py-1.5 px-3">
+          ↻ Refresh Metrics
+        </button>
       </div>
 
       {/* KPI Cards Grid */}
@@ -38,15 +108,15 @@ export default function AdminOverviewPage() {
         <div className="box p-5 border border-neutral-200 dark:border-neutral-800 space-y-1">
           <span className="text-xs uppercase font-bold text-neutral-500">{t("heldFunds")}</span>
           <div className="text-3xl font-extrabold font-mono text-accent">
-            {Number(data.held_amount).toLocaleString()} BDT
+            {Number(data?.held_amount || 0).toLocaleString()} BDT
           </div>
-          <span className="text-xs text-neutral-400">{data.held_count} active escrow deals</span>
+          <span className="text-xs text-neutral-400">{data?.held_count || 0} active escrow deals</span>
         </div>
 
         <div className="box p-5 border border-neutral-200 dark:border-neutral-800 space-y-1">
           <span className="text-xs uppercase font-bold text-neutral-500">{t("feeEarned")}</span>
           <div className="text-3xl font-extrabold font-mono text-emerald-600 dark:text-emerald-400">
-            {Number(data.fee_earned).toLocaleString()} BDT
+            {Number(data?.fee_earned || 0).toLocaleString()} BDT
           </div>
           <span className="text-xs text-neutral-400">Platform 2% service charges collected</span>
         </div>
@@ -54,7 +124,7 @@ export default function AdminOverviewPage() {
         <div className="box p-5 border border-neutral-200 dark:border-neutral-800 space-y-1">
           <span className="text-xs uppercase font-bold text-neutral-500">{t("openDisputes")}</span>
           <div className="text-3xl font-extrabold font-mono text-purple-600 dark:text-purple-400">
-            {data.open_disputes}
+            {data?.open_disputes || 0}
           </div>
           <Link href="/admin/disputes" className="text-xs text-purple-600 dark:text-purple-400 font-semibold hover:underline block">
             Inspect Dispute Queue →
@@ -64,25 +134,25 @@ export default function AdminOverviewPage() {
         <div className="box p-5 border border-neutral-200 dark:border-neutral-800 space-y-1">
           <span className="text-xs uppercase font-bold text-neutral-500">{t("released")}</span>
           <div className="text-2xl font-bold font-mono text-neutral-800 dark:text-neutral-200">
-            {Number(data.released_amount).toLocaleString()} BDT
+            {Number(data?.released_amount || 0).toLocaleString()} BDT
           </div>
-          <span className="text-xs text-neutral-400">{data.released_count} completed payouts</span>
+          <span className="text-xs text-neutral-400">{data?.released_count || 0} completed payouts</span>
         </div>
 
         <div className="box p-5 border border-neutral-200 dark:border-neutral-800 space-y-1">
           <span className="text-xs uppercase font-bold text-neutral-500">{t("refunded")}</span>
           <div className="text-2xl font-bold font-mono text-rose-600">
-            {Number(data.refunded_amount).toLocaleString()} BDT
+            {Number(data?.refunded_amount || 0).toLocaleString()} BDT
           </div>
-          <span className="text-xs text-neutral-400">{data.refunded_count} buyer refunds</span>
+          <span className="text-xs text-neutral-400">{data?.refunded_count || 0} buyer refunds</span>
         </div>
 
         <div className="box p-5 border border-neutral-200 dark:border-neutral-800 space-y-1">
           <span className="text-xs uppercase font-bold text-neutral-500">{t("totalUsers")}</span>
           <div className="text-2xl font-bold font-mono text-neutral-900 dark:text-neutral-100">
-            {data.total_users}
+            {data?.total_users || 0}
           </div>
-          <span className="text-xs text-neutral-400">Total accounts with buyer/seller profiles</span>
+          <span className="text-xs text-neutral-400">Total verified accounts</span>
         </div>
       </div>
 

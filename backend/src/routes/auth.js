@@ -13,19 +13,17 @@ router.post("/send-otp", (req, res) => {
 });
 
 router.post("/verify", async (req, res) => {
-  const { phone, otp, name = "", role = "seller" } = req.body;
+  const { phone, otp, name = "", role = "user" } = req.body;
   const cleanPhone = (phone || "").trim();
   if (!PHONE.test(cleanPhone)) fail(400, "Enter a valid 11-digit Bangladesh mobile number");
   if (otp !== config.demoOtp) fail(400, "Invalid verification code. Enter " + config.demoOtp);
-  if (!["seller", "buyer"].includes(role)) fail(400, "Role must be seller or buyer");
 
   let user = await one("select * from users where phone=$1", [cleanPhone]);
   if (!user) {
     user = await one(
       `insert into users(phone, name, role, page_name, seller_trust, buyer_trust)
-       values($1, $2, $3, $4, 70, 60) returning *`,
-      [cleanPhone, name.trim() || (role === "seller" ? "Seller " + cleanPhone.slice(-4) : "Buyer " + cleanPhone.slice(-4)),
-       role, role === "seller" ? name.trim() : ""]
+       values($1, $2, $3, $4, 75, 75) returning *`,
+      [cleanPhone, name.trim() || "User " + cleanPhone.slice(-4), role || "user", name.trim()]
     );
   } else if (name && !user.name) {
     user = await one("update users set name=$2 where id=$1 returning *", [user.id, name.trim()]);
@@ -45,12 +43,6 @@ router.post("/verify", async (req, res) => {
 
 router.get("/me", auth, (req, res) => {
   res.json({ user: req.user, is_admin: isAdmin(req.user) });
-});
-
-router.post("/switch-role", auth, async (req, res) => {
-  const targetRole = req.body.role === "buyer" ? "buyer" : "seller";
-  const updated = await one("update users set role=$2 where id=$1 returning *", [req.user.id, targetRole]);
-  res.json({ user: updated, is_admin: isAdmin(updated) });
 });
 
 export default router;

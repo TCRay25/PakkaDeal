@@ -24,7 +24,7 @@ type ProfileStats = {
 
 export default function ProfilePage() {
   const { t } = useI18n();
-  const { user, refresh, switchRole } = useAuth();
+  const { user, refresh } = useAuth();
   const [data, setData] = useState<ProfileStats | null>(null);
   const [name, setName] = useState("");
   const [pageName, setPageName] = useState("");
@@ -58,130 +58,64 @@ export default function ProfilePage() {
     }
   };
 
-  if (!user || loading) return null;
+  if (!user) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <p className="text-sm text-neutral-500">{t("loading")}</p>
+      </div>
+    );
+  }
+
+  const trustScore = Math.max(user.seller_trust || 70, user.buyer_trust || 60, 70);
+  const totalCompleted = (data?.seller_stats?.completed || 0) + (data?.buyer_stats?.delivered || 0);
+  const totalRefused = (data?.seller_stats?.refused || 0) + (data?.buyer_stats?.refused || 0);
+  const totalDisputes = (data?.seller_stats?.disputes || 0) + (data?.buyer_stats?.disputes || 0);
 
   return (
     <div className="max-w-4xl space-y-8">
-      <div className="border-b border-neutral-200 dark:border-neutral-800 pb-4 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{t("myProfile")}</h1>
-          <p className="text-sm text-neutral-500">
-            Every PakkaDeal account includes both a verified Buyer profile and Seller profile.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-neutral-500">Active Profile:</span>
-          <button
-            onClick={() => switchRole(user.role === "seller" ? "buyer" : "seller")}
-            className="btn text-xs py-1.5 px-3"
-          >
-            Switch to {user.role === "seller" ? t("roleBuyer") : t("roleSeller")}
-          </button>
-        </div>
+      <div className="border-b border-neutral-200 dark:border-neutral-800 pb-4">
+        <h1 className="text-2xl font-bold tracking-tight">{t("profile")}</h1>
+        <p className="text-sm text-neutral-500">
+          Your verified PakkaDeal account. You can buy, sell, rent, or provide services from this single account.
+        </p>
       </div>
 
-      {/* Dual Profiles Comparison Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Seller Profile Card */}
-        <div className={`box p-6 border-2 space-y-4 ${
-          user.role === "seller" ? "border-accent bg-accent/5" : "border-neutral-200 dark:border-neutral-800"
-        }`}>
-          <div className="flex justify-between items-center border-b border-neutral-200 dark:border-neutral-800 pb-3">
-            <div>
-              <span className="text-xs uppercase font-bold text-accent block">Business / Merchant</span>
-              <h2 className="text-lg font-bold">{t("sellerProfile")}</h2>
-            </div>
-            <div className="text-right">
-              <span className="text-xs text-neutral-500 uppercase block">Trust Score</span>
-              <span className="text-xl font-bold font-mono text-accent">{user.seller_trust} / 100</span>
-            </div>
+      {/* Account Profile Card */}
+      <div className="box p-6 border-2 border-accent bg-accent/5 space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-neutral-200 dark:border-neutral-800 pb-4">
+          <div className="space-y-1">
+            <span className="text-xs uppercase font-bold text-accent">Verified Account</span>
+            <h2 className="text-xl font-bold text-neutral-900 dark:text-neutral-100">
+              {user.name || user.page_name || "Member"}
+            </h2>
+            <div className="font-mono text-sm text-neutral-500">{user.phone}</div>
           </div>
 
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-neutral-500">{t("pageName")}:</span>
-              <span className="font-semibold">{user.page_name || "—"}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-neutral-500">{t("pageUrl")}:</span>
-              <span className="font-mono text-xs truncate max-w-[200px] text-accent">
-                {user.page_url ? (
-                  <a href={user.page_url.startsWith("http") ? user.page_url : `https://${user.page_url}`} target="_blank" rel="noreferrer">
-                    {user.page_url}
-                  </a>
-                ) : (
-                  "—"
-                )}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-neutral-500">Completed Orders:</span>
-              <span className="font-mono">{data?.seller_stats.completed || 0}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-neutral-500">Customer Refusals:</span>
-              <span className="font-mono">{data?.seller_stats.refused || 0}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-neutral-500">Disputes Incurred:</span>
-              <span className="font-mono">{data?.seller_stats.disputes || 0}</span>
-            </div>
-          </div>
-
-          <div className="pt-3 border-t border-neutral-200 dark:border-neutral-800">
-            <Link
-              href={`/seller/${user.id}`}
-              className="btn-ghost text-xs w-full justify-center"
-            >
-              Preview Public Seller Page →
-            </Link>
+          <div className="box p-3 border border-accent bg-white dark:bg-black text-center min-w-[120px]">
+            <span className="text-xs uppercase font-bold text-neutral-500 block">Trust Score</span>
+            <div className="text-2xl font-extrabold font-mono text-accent">{trustScore} / 100</div>
           </div>
         </div>
 
-        {/* Buyer Profile Card */}
-        <div className={`box p-6 border-2 space-y-4 ${
-          user.role === "buyer" ? "border-emerald-600 bg-emerald-600/5" : "border-neutral-200 dark:border-neutral-800"
-        }`}>
-          <div className="flex justify-between items-center border-b border-neutral-200 dark:border-neutral-800 pb-3">
-            <div>
-              <span className="text-xs uppercase font-bold text-emerald-600 dark:text-emerald-400 block">Personal</span>
-              <h2 className="text-lg font-bold">{t("buyerProfile")}</h2>
-            </div>
-            <div className="text-right">
-              <span className="text-xs text-neutral-500 uppercase block">Trust Score</span>
-              <span className="text-xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
-                {data?.buyer_stats.trust_score ?? user.buyer_trust} / 100
-              </span>
-            </div>
+        {/* Stats Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+          <div className="p-3 border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black">
+            <span className="text-xs text-neutral-500 block uppercase">Completed Deals</span>
+            <span className="text-lg font-bold font-mono text-emerald-600 dark:text-emerald-400">{totalCompleted}</span>
           </div>
-
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-neutral-500">{t("phone")}:</span>
-              <span className="font-mono font-semibold">{user.phone}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-neutral-500">{t("deliveredCount")}:</span>
-              <span className="font-mono font-semibold">{data?.buyer_stats.delivered || 0}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-neutral-500">{t("refusedCount")}:</span>
-              <span className="font-mono">{data?.buyer_stats.refused || 0}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-neutral-500">{t("disputesCount")}:</span>
-              <span className="font-mono">{data?.buyer_stats.disputes || 0}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-neutral-500">Perks:</span>
-              <span className="text-xs font-semibold text-accent">
-                {(data?.buyer_stats.trust_score ?? user.buyer_trust) >= 85
-                  ? "Deposit Waived on Small Orders"
-                  : (data?.buyer_stats.trust_score ?? user.buyer_trust) >= 70
-                  ? "50% Reduced Escrow Deposit"
-                  : "Standard Deposit Rules"}
-              </span>
-            </div>
+          <div className="p-3 border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black">
+            <span className="text-xs text-neutral-500 block uppercase">Doorstep Refusals</span>
+            <span className="text-lg font-bold font-mono text-neutral-600 dark:text-neutral-400">{totalRefused}</span>
+          </div>
+          <div className="p-3 border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black">
+            <span className="text-xs text-neutral-500 block uppercase">Disputes</span>
+            <span className="text-lg font-bold font-mono text-neutral-600 dark:text-neutral-400">{totalDisputes}</span>
+          </div>
+          <div className="p-3 border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black">
+            <span className="text-xs text-neutral-500 block uppercase">Public Link</span>
+            <Link href={`/seller/${user.id}`} className="text-xs font-semibold text-accent hover:underline block pt-1">
+              View Shop Profile →
+            </Link>
           </div>
         </div>
       </div>
@@ -192,9 +126,9 @@ export default function ProfilePage() {
 
         <form onSubmit={handleSave} className="space-y-4 max-w-xl">
           <div>
-            <label htmlFor="profile-name-input">Your Full Name</label>
+            <label htmlFor="edit-name-input">Full Name</label>
             <input
-              id="profile-name-input"
+              id="edit-name-input"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Rahim Chowdhury"
@@ -202,19 +136,19 @@ export default function ProfilePage() {
           </div>
 
           <div>
-            <label htmlFor="profile-page-name-input">{t("pageName")}</label>
+            <label htmlFor="edit-page-name-input">{t("pageName")} (Optional)</label>
             <input
-              id="profile-page-name-input"
+              id="edit-page-name-input"
               value={pageName}
               onChange={(e) => setPageName(e.target.value)}
-              placeholder="e.g. Gadget Corner BD or Dhanmondi Rentals"
+              placeholder="e.g. Gadget Corner BD"
             />
           </div>
 
           <div>
-            <label htmlFor="profile-page-url-input">{t("pageUrl")}</label>
+            <label htmlFor="edit-page-url-input">{t("pageUrl")} (Optional)</label>
             <input
-              id="profile-page-url-input"
+              id="edit-page-url-input"
               value={pageUrl}
               onChange={(e) => setPageUrl(e.target.value)}
               placeholder="e.g. facebook.com/gadgetcornerbd"

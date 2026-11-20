@@ -39,3 +39,104 @@
     @apply text-sm text-neutral-500 dark:text-neutral-400;
   }
 }
+
+@keyframes handSlideLeft {
+  0% {
+    transform: translateX(-140px);
+    opacity: 0;
+  }
+  65% {
+    transform: translateX(4px);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes handSlideRight {
+  0% {
+    transform: translateX(140px);
+    opacity: 0;
+  }
+  65% {
+    transform: translateX(-4px);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes boxDropTop {
+  0% {
+    transform: translateY(-110px) scale(0.9);
+    opacity: 0;
+  }
+  70% {
+    transform: translateY(6px) scale(1.02);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-hand-left {
+  animation: handSlideLeft 1.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-hand-right {
+  animation: handSlideRight 1.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-box-drop {
+  opacity: 0;
+  animation: boxDropTop 1.2s cubic-bezier(0.34, 1.2, 0.64, 1) 0.8s forwards;
+}
+
+@keyframes floatSlow {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    opacity: 0.3;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes badgeFloat {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+.animate-float {
+  animation: floatSlow 4.5s ease-in-out infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 3.5s ease-in-out infinite;
+}
+
+.animate-badge-float {
+  animation: badgeFloat 3.2s ease-in-out infinite;
+}
+
+

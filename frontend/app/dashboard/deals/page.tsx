@@ -40,7 +40,6 @@ export default function DealsListPage() {
   };
 
   if (!user) return null;
-  const isSeller = user.role === "seller";
 
   return (
     <div className="space-y-6">
@@ -139,14 +138,14 @@ export default function DealsListPage() {
                     {deal.deal_type}
                   </td>
                   <td className="px-4 py-3 text-xs">
-                    {isSeller ? (
+                    {deal.seller_id === user.id ? (
                       <>
                         <div className="font-medium">{deal.buyer_name}</div>
                         <div className="text-neutral-500 font-mono">{deal.buyer_phone}</div>
                       </>
                     ) : (
                       <>
-                        <div className="font-medium">{deal.page_name || deal.seller_name || "Seller"}</div>
+                        <div className="font-medium">{deal.page_name || deal.seller_name || "Creator"}</div>
                         <div className="text-neutral-500 font-mono">ID #{deal.seller_id}</div>
                       </>
                     )}

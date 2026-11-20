@@ -25,27 +25,31 @@ export async function addLedger({ dealId, type, amount, partyPhone, notes }) {
 }
 
 /** Buyer funds deal into escrow */
-export async function applyPayment(deal, paymentMethod = "bKash") {
+export async function applyPayment(deal, paymentOpts = "bKash") {
   if (deal.status !== "created") throw new Error("Deal cannot be paid in current status");
   const shipHours = Number(await getSetting("ship_within_hours", config.shipWithinHours));
   const shipBy = new Date(Date.now() + shipHours * 36e5).toISOString();
 
+  const paymentMethod = typeof paymentOpts === "object" ? (paymentOpts.paymentMethod || "bKash") : paymentOpts;
+  const senderNumber = typeof paymentOpts === "object" ? (paymentOpts.senderNumber || deal.buyer_phone) : deal.buyer_phone;
+  const trxId = typeof paymentOpts === "object" ? (paymentOpts.trxId || `TX-${Date.now().toString(36).toUpperCase()}`) : `TX-${Date.now().toString(36).toUpperCase()}`;
+
   await q(
-    `update deals set status='held', deposit=$2, ship_by=$3, updated_at=datetime('now') where id=$1`,
-    [deal.id, deal.total_amount, shipBy]
+    `update deals set status='held', deposit=$2, ship_by=$3, payment_method=$4, payment_sender=$5, payment_trx_id=$6, updated_at=datetime('now') where id=$1`,
+    [deal.id, deal.total_amount, shipBy, paymentMethod, senderNumber, trxId]
   );
 
   await addLedger({
     dealId: deal.id,
     type: "hold",
     amount: deal.total_amount,
-    partyPhone: deal.buyer_phone,
-    notes: `Escrow hold funded via ${paymentMethod} Sandbox`,
+    partyPhone: senderNumber || deal.buyer_phone,
+    notes: `Escrow hold funded via ${paymentMethod} (Sender: ${senderNumber || deal.buyer_phone}, TrxID: ${trxId})`,
   });
 
-  await log(deal.id, "paid", `Buyer deposited ${deal.total_amount} BDT into escrow via ${paymentMethod}`);
-  await notify(deal.buyer_phone, `PakkaDeal: Funds held for deal ${deal.code}. Money is safe in escrow.`);
-  await notifySeller(deal.seller_id, `PakkaDeal: Buyer deposited ${deal.total_amount} BDT for deal #${deal.code}. Please ship within ${shipHours} hours.`);
+  await log(deal.id, "paid", `Buyer deposited ${deal.total_amount} BDT into escrow via ${paymentMethod}. TrxID: ${trxId}, Sender: ${senderNumber || deal.buyer_phone}`);
+  await notify(deal.buyer_phone, `PakkaDeal: Funds (${deal.total_amount} BDT) held for deal #${deal.code}. TrxID: ${trxId}. Money is safely locked in escrow.`);
+  await notifySeller(deal.seller_id, `PakkaDeal: Buyer deposited ${deal.total_amount} BDT for deal #${deal.code} (TrxID: ${trxId}). Please ship within ${shipHours} hours.`);
 
   return one("select * from deals where id=$1", [deal.id]);
 }
