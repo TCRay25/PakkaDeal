@@ -379,5 +379,13 @@
   "trackStatus_out_for_delivery": "Out for Delivery",
   "trackStatus_delivered": "Delivered to Recipient",
   "trackStatus_delivery_failed": "Delivery Attempt Failed",
-  "trackStatus_returned": "Returned to Sender"
+  "trackStatus_returned": "Returned to Sender",
+  "noticeLabel": "Notice:",
+  "platformTitle": "Platform",
+  "home": "Home",
+  "quickPortals": "Quick Portals",
+  "footerCopyright": "© 2026 PakkaDeal Bangladesh. Built with deterministic code and trust rules.",
+  "footerEscrowFee": "2% Escrow Fee",
+  "footerCouriers": "Steadfast & Pathao Compatible",
+  "footerSandbox": "bKash Sandbox"
 }

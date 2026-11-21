@@ -379,5 +379,13 @@
   "trackStatus_out_for_delivery": "ডেলিভারিম্যান নিয়ে বের হয়েছেন",
   "trackStatus_delivered": "গ্রাহকের নিকট ডেলিভারি সম্পন্ন",
   "trackStatus_delivery_failed": "ডেলিভারি চেষ্টা ব্যর্থ হয়েছে",
-  "trackStatus_returned": "পার্সেল রিটার্ন করা হয়েছে"
+  "trackStatus_returned": "পার্সেল রিটার্ন করা হয়েছে",
+  "noticeLabel": "বিজ্ঞপ্তি:",
+  "platformTitle": "প্ল্যাটফর্ম",
+  "home": "হোম",
+  "quickPortals": "কুইক পোর্টাল",
+  "footerCopyright": "© ২০২৬ পাক্কাডিল বাংলাদেশ। সুরক্ষিত কোড এবং বিশ্বাসযোগ্য নিয়মে পরিচালিত।",
+  "footerEscrowFee": "২% এসক্রো ফি",
+  "footerCouriers": "স্টিডফাস্ট ও পাঠাও কমপ্যাটিবল",
+  "footerSandbox": "বিকাশ স্যান্ডবক্স"
 }
