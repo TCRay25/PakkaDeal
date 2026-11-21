@@ -4,7 +4,7 @@ import { api, patch, SettingItem } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 
 export default function AdminSettingsPage() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(false);
@@ -35,7 +35,7 @@ export default function AdminSettingsPage() {
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (x: any) {
-      setErr(x.message || "Failed to update settings");
+      setErr(x.message || (lang === "bn" ? "সেটিংস সংরক্ষণ ব্যর্থ হয়েছে" : "Failed to update settings"));
     }
   };
 
@@ -44,7 +44,9 @@ export default function AdminSettingsPage() {
       <div className="border-b border-neutral-200 dark:border-neutral-800 pb-4">
         <h1 className="text-2xl font-bold tracking-tight">{t("settingsTitle")}</h1>
         <p className="text-sm text-neutral-500">
-          Configure deterministic escrow parameters, platform fee percentages, timeouts, and return rules.
+          {lang === "bn"
+            ? "এসক্রো প্যারামিটার, প্ল্যাটফর্ম ফি শতাংশ, টাইমআউট এবং রিটার্ন নীতিমালা কনফিগার করুন।"
+            : "Configure deterministic escrow parameters, platform fee percentages, timeouts, and return rules."}
         </p>
       </div>
 
@@ -64,7 +66,7 @@ export default function AdminSettingsPage() {
                 </p>
               </div>
               <span className="px-2 py-0.5 text-xs bg-accent text-white font-mono font-bold">
-                Escrow Vault
+                {lang === "bn" ? "এসক্রো ভল্ট" : "Escrow Vault"}
               </span>
             </div>
 
@@ -145,7 +147,7 @@ export default function AdminSettingsPage() {
 
           <div className="box p-6 border border-neutral-200 dark:border-neutral-800 space-y-4">
             <h2 className="text-sm font-bold uppercase tracking-wider text-neutral-800 dark:text-neutral-200 border-b border-neutral-200 dark:border-neutral-800 pb-2">
-              Fee & Revenue Parameters
+              {lang === "bn" ? "ফি ও প্ল্যাটফর্ম আয় নির্ধারণ" : "Fee & Revenue Parameters"}
             </h2>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -161,7 +163,9 @@ export default function AdminSettingsPage() {
                   onChange={(e) => handleChange("platform_fee_percent", e.target.value)}
                   className="font-mono text-sm"
                 />
-                <span className="text-xs text-neutral-500 mt-1 block">Default 2%. Deducted from seller payout.</span>
+                <span className="text-xs text-neutral-500 mt-1 block">
+                  {lang === "bn" ? "ডিফল্ট ২%। বিক্রেতার পেআউট থেকে কর্তন করা হয়।" : "Default 2%. Deducted from seller payout."}
+                </span>
               </div>
 
               <div>
@@ -174,14 +178,16 @@ export default function AdminSettingsPage() {
                   onChange={(e) => handleChange("platform_fee_min", e.target.value)}
                   className="font-mono text-sm"
                 />
-                <span className="text-xs text-neutral-500 mt-1 block">Floor minimum per transaction.</span>
+                <span className="text-xs text-neutral-500 mt-1 block">
+                  {lang === "bn" ? "প্রতি ট্রানজ্যাকশনে সর্বনিম্ন প্ল্যাটফর্ম ফি।" : "Floor minimum per transaction."}
+                </span>
               </div>
             </div>
           </div>
 
           <div className="box p-6 border border-neutral-200 dark:border-neutral-800 space-y-4">
             <h2 className="text-sm font-bold uppercase tracking-wider text-neutral-800 dark:text-neutral-200 border-b border-neutral-200 dark:border-neutral-800 pb-2">
-              Escrow Windows & Timeout Automation
+              {lang === "bn" ? "এসক্রো সময়সীমা ও স্বয়ংক্রিয় টাইমআউট" : "Escrow Windows & Timeout Automation"}
             </h2>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -196,7 +202,9 @@ export default function AdminSettingsPage() {
                   className="font-mono text-sm"
                 />
                 <span className="text-xs text-neutral-500 mt-1 block">
-                  Time buyer has to inspect item after courier delivery before automatic payout release. Default 72h (3 days).
+                  {lang === "bn"
+                    ? "কুরিয়ার ডেলিভারির পর স্বয়ংক্রিয় পেআউট রিলিজের পূর্বে ক্রেতার পণ্য যাচাইয়ের সময়সীমা। ডিফল্ট ৭২ ঘণ্টা (৩ দিন)।"
+                    : "Time buyer has to inspect item after courier delivery before automatic payout release. Default 72h (3 days)."}
                 </span>
               </div>
 
@@ -211,7 +219,9 @@ export default function AdminSettingsPage() {
                   className="font-mono text-sm"
                 />
                 <span className="text-xs text-neutral-500 mt-1 block">
-                  Time seller has to dispatch package with courier tracking after payment before automatic full buyer refund. Default 48h.
+                  {lang === "bn"
+                    ? "পেমেন্ট নিশ্চিতের পর সম্পূর্ণ রিফান্ডের পূর্বে বিক্রেতার কুরিয়ার ট্র্যাকিং প্রদানের সময়সীমা। ডিফল্ট ৪৮ ঘণ্টা।"
+                    : "Time seller has to dispatch package with courier tracking after payment before automatic full buyer refund. Default 48h."}
                 </span>
               </div>
             </div>
@@ -220,7 +230,7 @@ export default function AdminSettingsPage() {
           {/* Compliance & Regulatory Disclaimer */}
           <div className="box p-5 border border-amber-300 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 space-y-2 text-xs">
             <strong className="block text-amber-900 dark:text-amber-200 uppercase tracking-wide">
-              Bangladesh Bank Regulatory Compliance Protocol
+              {lang === "bn" ? "বাংলাদেশ ব্যাংক নিয়ন্ত্রক সম্মতি প্রটোকল" : "Bangladesh Bank Regulatory Compliance Protocol"}
             </strong>
             <p className="text-amber-800 dark:text-amber-300 leading-relaxed">
               {t("regulatoryNotice")}

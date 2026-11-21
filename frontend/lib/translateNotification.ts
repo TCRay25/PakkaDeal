@@ -22,6 +22,7 @@ const TITLE_TRANSLATIONS: Record<string, string> = {
   "Dispute Under Review": "বিরোধ পর্যালোচনাধীন",
   "Dispute Alert": "বিরোধের সতর্কতা",
   "Dispute Decision": "বিরোধের সিদ্ধান্ত",
+  "New Deal Invitation": "নতুন ডিলের আমন্ত্রণ",
   "Auto-Refund: Seller Dispatch Timeout": "অটো-রিফান্ড: পার্সেল শিপিং সময় উত্তীর্ণ",
   "Auto-Release: Delivery Confirmation Timeout": "অটো-রিলিজ: ডেলিভারি কনফার্মেশন সময় উত্তীর্ণ",
   "PakkaDeal Update": "পাক্কাডিল আপডেট",
@@ -52,6 +53,15 @@ export function translateNotification(
     return {
       title,
       message: `${mCreated[1]} #${mCreated[2]} ডিল তৈরি করেছেন। আপনার অর্ডার নিশ্চিত করতে অনুগ্রহ করে এসক্রোতে টাকা জমা দিন।`,
+    };
+  }
+
+  // Pattern: PakkaDeal: [User] invited you to deal #[Code] for "[Product]". Total: [Amount] BDT. Pay into escrow to proceed.
+  const mInvite = msg.match(/^PakkaDeal:\s*(.+?)\s+invited you to deal\s*#?([A-Za-z0-9_-]+)\s+for\s+"([^"]+)"\.\s*Total:\s*([\d,]+)\s*BDT\.\s*Pay into escrow to proceed\./i);
+  if (mInvite) {
+    return {
+      title,
+      message: `পাক্কাডিল: ${mInvite[1]} আপনাকে "${mInvite[3]}" এর #${mInvite[2]} ডিলে আমন্ত্রণ জানিয়েছেন। মোট: ${mInvite[4]} টাকা। এগিয়ে যেতে এসক্রোতে পেমেন্ট সম্পন্ন করুন।`,
     };
   }
 
