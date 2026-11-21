@@ -49,6 +49,7 @@ export type Deal = {
   delivery_charge: number;
   total_amount: number;
   fee_amount: number;
+  fee_percent?: number;
   seller_payout: number;
   deposit: number;
   return_policy: "buyer_pays" | "seller_pays" | "no_returns";

@@ -1,10 +1,24 @@
 "use client";
 import { useI18n } from "@/lib/i18n";
 import { Deal } from "@/lib/api";
+import { toBengaliDigits } from "@/lib/settings";
 
 export default function MoneyBreakdown({ deal }: { deal: Deal }) {
   const { t, lang } = useI18n();
   const cur = lang === "bn" ? " টাকা" : " BDT";
+
+  // Calculate historical percentage for this specific deal
+  const dealPercent =
+    deal.fee_percent !== undefined && deal.fee_percent !== null && Number(deal.fee_percent) > 0
+      ? Number(deal.fee_percent)
+      : deal.total_amount > 0 && deal.fee_amount > 0
+      ? Math.round((deal.fee_amount / deal.total_amount) * 1000) / 10
+      : 2;
+
+  const feeLabel =
+    lang === "bn"
+      ? `পাক্কাডিল সার্ভিস ফি (${toBengaliDigits(dealPercent)}%)`
+      : `PakkaDeal Service Fee (${dealPercent}%)`;
 
   return (
     <div className="box border border-neutral-200 dark:border-neutral-800 p-4 space-y-3">
@@ -27,7 +41,7 @@ export default function MoneyBreakdown({ deal }: { deal: Deal }) {
           <span className="text-base font-bold text-accent">{deal.total_amount.toLocaleString()}{cur}</span>
         </div>
         <div className="flex justify-between items-center col-span-2 text-xs text-neutral-500">
-          <span>{t("platformFee")}</span>
+          <span>{feeLabel}</span>
           <span>-{deal.fee_amount.toLocaleString()}{cur}</span>
         </div>
         <div className="flex justify-between items-center col-span-2 pt-2 border-t border-neutral-200 dark:border-neutral-800 text-sm font-semibold">

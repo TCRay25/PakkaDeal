@@ -151,6 +151,7 @@ export async function initDb() {
         delivery_charge int not null default 0,
         total_amount int not null default 0,
         fee_amount int not null default 0,
+        fee_percent real not null default 2,
         seller_payout int not null default 0,
         deposit int not null default 0,
         return_policy text not null default 'buyer_pays',
@@ -329,6 +330,7 @@ export async function initDb() {
         delivery_charge int not null default 0,
         total_amount int not null default 0,
         fee_amount int not null default 0,
+        fee_percent real not null default 2,
         seller_payout int not null default 0,
         deposit int not null default 0,
         return_policy text not null default 'buyer_pays',
@@ -456,6 +458,7 @@ async function runMigrations() {
         ["delivery_charge", "int not null default 0"],
         ["total_amount", "int not null default 0"],
         ["fee_amount", "int not null default 0"],
+        ["fee_percent", "real not null default 2"],
         ["seller_payout", "int not null default 0"],
         ["deposit", "int not null default 0"],
         ["return_policy", "text not null default 'buyer_pays'"],
@@ -595,6 +598,7 @@ async function runMigrations() {
       }
 
       db.exec(`update deals set seller_payout = max(total_amount - fee_amount, 0) where (seller_payout is null or seller_payout = 0) and total_amount > 0`);
+      db.exec(`update deals set fee_percent = round(cast(fee_amount as real) * 100.0 / total_amount, 1) where total_amount > 0 and (fee_percent is null or fee_percent = 0)`);
     } else if (pgPool) {
       const neededDealCols = [
         ["deal_type", "text not null default 'product'"],
@@ -602,6 +606,7 @@ async function runMigrations() {
         ["delivery_charge", "int not null default 0"],
         ["total_amount", "int not null default 0"],
         ["fee_amount", "int not null default 0"],
+        ["fee_percent", "real not null default 2"],
         ["seller_payout", "int not null default 0"],
         ["deposit", "int not null default 0"],
         ["return_policy", "text not null default 'buyer_pays'"],
@@ -723,6 +728,7 @@ async function runMigrations() {
       await pgPool.query(`alter table ledger add column if not exists notes text not null default ''`);
 
       await pgPool.query(`update deals set seller_payout = greatest(total_amount - fee_amount, 0) where (seller_payout is null or seller_payout = 0) and total_amount > 0`);
+      await pgPool.query(`update deals set fee_percent = round(cast(fee_amount as numeric) * 100.0 / nullif(total_amount, 0), 1) where total_amount > 0 and (fee_percent is null or fee_percent = 0)`);
     }
   } catch (migErr) {
     console.warn("Migration warning:", migErr.message);

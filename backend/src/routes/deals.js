@@ -217,6 +217,7 @@ router.post("/", auth, async (req, res) => {
   if (b.buyer_phone === req.user.phone) fail(400, "You cannot create a deal with your own phone number");
 
   const totalAmount = price + charge;
+  const feePercent = Number(await getSetting("platform_fee_percent", config.feePercent || 2));
   const feeAmount = await calculateFee(totalAmount);
   const sellerPayout = totalAmount - feeAmount;
 
@@ -236,10 +237,10 @@ router.post("/", auth, async (req, res) => {
   const deal = await one(
     `insert into deals(
        code, deal_type, seller_id, buyer_phone, buyer_name, address, area, product, details,
-       price, delivery_charge, total_amount, fee_amount, seller_payout, deposit,
+       price, delivery_charge, total_amount, fee_amount, fee_percent, seller_payout, deposit,
        return_policy, return_charge, status, courier_name, risk_score, risk_reasons, buyer_trust
      ) values(
-       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
      ) returning *`,
     [
       code,
@@ -255,6 +256,7 @@ router.post("/", auth, async (req, res) => {
       charge,
       totalAmount,
       feeAmount,
+      feePercent,
       sellerPayout,
       totalAmount,
       returnPolicy,
