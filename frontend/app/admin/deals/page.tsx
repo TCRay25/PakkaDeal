@@ -5,9 +5,10 @@ import { api, post, Deal, API } from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
 import { useI18n } from "@/lib/i18n";
 import { useSocket } from "@/lib/socket";
+import { translateDealType } from "@/lib/translateTimeline";
 
 export default function AdminDealsPage() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { on } = useSocket();
   const [deals, setDeals] = useState<Deal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -105,20 +106,22 @@ export default function AdminDealsPage() {
       <div className="border-b border-neutral-200 dark:border-neutral-800 pb-4">
         <h1 className="text-2xl font-bold tracking-tight">{t("allDeals")}</h1>
         <p className="text-sm text-neutral-500">
-          Master registry of all platform escrow contracts across Bangladesh.
+          {lang === "bn"
+            ? "বাংলাদেশ জুড়ে সমস্ত প্ল্যাটফর্ম এসক্রো চুক্তির মাস্টার রেজিস্ট্রি।"
+            : "Master registry of all platform escrow contracts across Bangladesh."}
         </p>
       </div>
 
       {/* Quick Filter Chips */}
       <div className="flex flex-wrap gap-2">
         {[
-          { id: "all", label: "All Contracts" },
-          { id: "held", label: "💰 Escrow Held Funds" },
-          { id: "countdown", label: "⏱️ 24h Countdown Active" },
-          { id: "manual", label: "⚠️ Manual Courier Audits" },
-          { id: "failed", label: "❌ Failed Tracking Lookups" },
-          { id: "stuck", label: "⏳ Stuck Shipments (>48h)" },
-          { id: "disputed", label: "🚨 Open Disputes" },
+          { id: "all", label: lang === "bn" ? "সব ডিল" : "All Contracts" },
+          { id: "held", label: lang === "bn" ? "💰 এসক্রো হোল্ডকৃত অর্থ" : "💰 Escrow Held Funds" },
+          { id: "countdown", label: lang === "bn" ? "⏱️ ২৪ ঘণ্টা কাউন্টডাউন সক্রিয়" : "⏱️ 24h Countdown Active" },
+          { id: "manual", label: lang === "bn" ? "⚠️ ম্যানুয়াল কুরিয়ার অডিট" : "⚠️ Manual Courier Audits" },
+          { id: "failed", label: lang === "bn" ? "❌ ট্র্যাকিং ব্যর্থতা" : "❌ Failed Tracking Lookups" },
+          { id: "stuck", label: lang === "bn" ? "⏳ আটকে থাকা চালান (>৪৮ঘণ্টা)" : "⏳ Stuck Shipments (>48h)" },
+          { id: "disputed", label: lang === "bn" ? "🚨 অমীমাংসিত বিরোধ" : "🚨 Open Disputes" },
         ].map((chip) => (
           <button
             key={chip.id}
@@ -141,16 +144,16 @@ export default function AdminDealsPage() {
             onChange={(e) => setStatusFilter(e.target.value)}
             className="text-xs py-1.5 px-3 border border-neutral-300 dark:border-neutral-700 bg-transparent w-auto"
           >
-            <option value="all">All Statuses</option>
-            <option value="created">Created</option>
-            <option value="payment_pending">Payment Pending</option>
-            <option value="held">Held</option>
-            <option value="shipped">Shipped</option>
-            <option value="in_transit">In Transit</option>
-            <option value="delivered">Delivered</option>
-            <option value="disputed">Disputed</option>
-            <option value="released">Released</option>
-            <option value="refunded">Refunded</option>
+            <option value="all">{lang === "bn" ? "সকল স্ট্যাটাস" : "All Statuses"}</option>
+            <option value="created">{lang === "bn" ? "ডিল তৈরি" : "Created"}</option>
+            <option value="payment_pending">{lang === "bn" ? "পেমেন্ট অপেক্ষমাণ" : "Payment Pending"}</option>
+            <option value="held">{lang === "bn" ? "হোল্ডকৃত" : "Held"}</option>
+            <option value="shipped">{lang === "bn" ? "শিপড" : "Shipped"}</option>
+            <option value="in_transit">{lang === "bn" ? "ইন-ট্রানজিট" : "In Transit"}</option>
+            <option value="delivered">{lang === "bn" ? "ডেলিভারি সম্পন্ন" : "Delivered"}</option>
+            <option value="disputed">{lang === "bn" ? "বিরোধপূর্ণ" : "Disputed"}</option>
+            <option value="released">{lang === "bn" ? "রিলিজ সম্পন্ন" : "Released"}</option>
+            <option value="refunded">{lang === "bn" ? "রিফান্ড সম্পন্ন" : "Refunded"}</option>
           </select>
 
           <select
@@ -158,23 +161,23 @@ export default function AdminDealsPage() {
             onChange={(e) => setTypeFilter(e.target.value)}
             className="text-xs py-1.5 px-3 border border-neutral-300 dark:border-neutral-700 bg-transparent w-auto"
           >
-            <option value="all">All Types</option>
-            <option value="product">Product</option>
-            <option value="rental">Rental</option>
-            <option value="service">Service</option>
+            <option value="all">{lang === "bn" ? "সকল ধরন" : "All Types"}</option>
+            <option value="product">{lang === "bn" ? "পণ্য" : "Product"}</option>
+            <option value="rental">{lang === "bn" ? "বাড়িভাড়া" : "Rental"}</option>
+            <option value="service">{lang === "bn" ? "সার্ভিস" : "Service"}</option>
           </select>
         </div>
 
         <form onSubmit={handleSearch} className="flex gap-1">
           <input
             type="text"
-            placeholder="Search code, phone, product..."
+            placeholder={lang === "bn" ? "কোড, মোবাইল, পণ্য দিয়ে খুঁজুন..." : "Search code, phone, product..."}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-60 text-xs py-1 px-2 border border-neutral-300 dark:border-neutral-700"
           />
           <button type="submit" className="btn text-xs py-1 px-3">
-            Search
+            {lang === "bn" ? "অনুসন্ধান" : "Search"}
           </button>
         </form>
       </div>
@@ -183,21 +186,21 @@ export default function AdminDealsPage() {
         <p className="text-sm text-neutral-500">{t("loading")}</p>
       ) : deals.length === 0 ? (
         <div className="box p-8 text-center text-sm text-neutral-500">
-          No deals match current criteria.
+          {lang === "bn" ? "কোনো ডিল খুঁজে পাওয়া যায়নি।" : "No deals match current criteria."}
         </div>
       ) : (
         <div className="overflow-x-auto border border-neutral-200 dark:border-neutral-800">
           <table className="w-full text-left text-sm">
             <thead className="bg-neutral-50 dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 text-xs uppercase font-semibold text-neutral-500">
               <tr>
-                <th className="px-4 py-3">Code / Product</th>
-                <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3">Seller</th>
-                <th className="px-4 py-3">Buyer Phone</th>
-                <th className="px-4 py-3">Escrow Deposit</th>
-                <th className="px-4 py-3">Courier</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Admin Actions</th>
+                <th className="px-4 py-3">{lang === "bn" ? "কোড / পণ্য" : "Code / Product"}</th>
+                <th className="px-4 py-3">{lang === "bn" ? "ধরন" : "Type"}</th>
+                <th className="px-4 py-3">{lang === "bn" ? "বিক্রেতা" : "Seller"}</th>
+                <th className="px-4 py-3">{lang === "bn" ? "বায়ার ফোন" : "Buyer Phone"}</th>
+                <th className="px-4 py-3">{lang === "bn" ? "এসক্রো জমা" : "Escrow Deposit"}</th>
+                <th className="px-4 py-3">{lang === "bn" ? "কুরিয়ার" : "Courier"}</th>
+                <th className="px-4 py-3">{lang === "bn" ? "স্ট্যাটাস" : "Status"}</th>
+                <th className="px-4 py-3 text-right">{lang === "bn" ? "অ্যাডমিন অ্যাকশন" : "Admin Actions"}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800 text-xs">
@@ -207,13 +210,13 @@ export default function AdminDealsPage() {
                     <div className="font-semibold text-neutral-900 dark:text-neutral-100">{d.product}</div>
                     <div className="font-mono text-neutral-500">{d.code}</div>
                   </td>
-                  <td className="px-4 py-3 uppercase">{d.deal_type}</td>
+                  <td className="px-4 py-3 uppercase">{translateDealType(d.deal_type, lang)}</td>
                   <td className="px-4 py-3">
-                    <div className="font-medium">{d.page_name || d.seller_name || "Seller"}</div>
+                    <div className="font-medium">{d.page_name || d.seller_name || (lang === "bn" ? "বিক্রেতা" : "Seller")}</div>
                     <div className="text-neutral-500 font-mono">ID #{d.seller_id}</div>
                   </td>
                   <td className="px-4 py-3 font-mono">{d.buyer_phone}</td>
-                  <td className="px-4 py-3 font-mono font-bold">{d.total_amount.toLocaleString()} BDT</td>
+                  <td className="px-4 py-3 font-mono font-bold">{d.total_amount.toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}</td>
                   <td className="px-4 py-3">
                     <div className="font-semibold text-xs flex items-center gap-1.5">
                       {d.courier_name}
@@ -226,7 +229,7 @@ export default function AdminDealsPage() {
                     {d.is_manual_courier ? (
                       <div className="space-y-0.5">
                         <span className="text-[10px] text-amber-600 font-bold font-mono block">
-                          MANUAL ({d.manual_audit_status || "pending"})
+                          {lang === "bn" ? "ম্যানুয়াল" : "MANUAL"} ({d.manual_audit_status === "approved" ? (lang === "bn" ? "অনুমোদিত" : "approved") : d.manual_audit_status === "rejected" ? (lang === "bn" ? "প্রত্যাখ্যাত" : "rejected") : (lang === "bn" ? "অপেক্ষমাণ" : "pending")})
                         </span>
                         {d.has_consignment_slip && (
                           <button
@@ -234,7 +237,7 @@ export default function AdminDealsPage() {
                             onClick={() => setPreviewImage(`${API}/deals/${d.code}/consignment-slip`)}
                             className="text-[10px] text-accent underline hover:text-black dark:hover:text-white"
                           >
-                            View Slip 📄
+                            {lang === "bn" ? "রসিদ দেখুন 📄" : "View Slip 📄"}
                           </button>
                         )}
                       </div>
@@ -264,10 +267,10 @@ export default function AdminDealsPage() {
                       }}
                       className="btn-ghost text-xs py-1 px-2 border border-neutral-300 dark:border-neutral-700"
                     >
-                      Admin
+                      {lang === "bn" ? "অ্যাডমিন" : "Admin"}
                     </button>
                     <Link href={`/deal/${d.code}`} className="btn-ghost text-xs py-1 px-2">
-                      View
+                      {lang === "bn" ? "ডিল দেখুন" : "View"}
                     </Link>
                   </td>
                 </tr>
@@ -283,8 +286,12 @@ export default function AdminDealsPage() {
           <form onSubmit={handleAdminAction} className="box w-full max-w-lg p-6 border-2 border-accent space-y-4 bg-white dark:bg-black max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b pb-2">
               <div>
-                <h3 className="font-bold text-base">Administrative Override: #{activeDeal.code}</h3>
-                <span className="text-xs text-neutral-500">{activeDeal.product} ({activeDeal.total_amount.toLocaleString()} BDT)</span>
+                <h3 className="font-bold text-base">
+                  {lang === "bn" ? "প্রশাসনিক ওভাররাইড: #" : "Administrative Override: #"}{activeDeal.code}
+                </h3>
+                <span className="text-xs text-neutral-500">
+                  {activeDeal.product} ({activeDeal.total_amount.toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"})
+                </span>
               </div>
               <button
                 type="button"
@@ -307,7 +314,7 @@ export default function AdminDealsPage() {
                   actionType === "release" ? "border-emerald-600 bg-emerald-600 text-white" : "border-neutral-300"
                 }`}
               >
-                Force Release
+                {lang === "bn" ? "বাধ্যতামূলক রিলিজ" : "Force Release"}
               </button>
               <button
                 type="button"
@@ -316,7 +323,7 @@ export default function AdminDealsPage() {
                   actionType === "refund" ? "border-rose-600 bg-rose-600 text-white" : "border-neutral-300"
                 }`}
               >
-                Force Refund
+                {lang === "bn" ? "বাধ্যতামূলক রিফান্ড" : "Force Refund"}
               </button>
               <button
                 type="button"
@@ -325,7 +332,7 @@ export default function AdminDealsPage() {
                   actionType === "split" ? "border-purple-600 bg-purple-600 text-white" : "border-neutral-300"
                 }`}
               >
-                Split Payout
+                {lang === "bn" ? "আংশিক ভাগ" : "Split Payout"}
               </button>
               <button
                 type="button"
@@ -334,18 +341,20 @@ export default function AdminDealsPage() {
                   actionType === "audit" ? "border-amber-600 bg-amber-600 text-white" : "border-neutral-300"
                 }`}
               >
-                Audit Slip
+                {lang === "bn" ? "স্লিপ অডিট" : "Audit Slip"}
               </button>
             </div>
 
             {actionType === "split" && (
               <div className="p-3 border border-purple-500/30 bg-purple-500/5 space-y-3">
                 <span className="text-xs font-bold uppercase text-purple-700 dark:text-purple-300 block">
-                  Arbitrated Fund Distribution (Total: {activeDeal.total_amount.toLocaleString()} BDT)
+                  {lang === "bn"
+                    ? `মীমাংসিত তহবিল বণ্টন (মোট: ${activeDeal.total_amount.toLocaleString()} টাকা)`
+                    : `Arbitrated Fund Distribution (Total: ${activeDeal.total_amount.toLocaleString()} BDT)`}
                 </span>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label>Seller Share (BDT)</label>
+                    <label>{lang === "bn" ? "বিক্রেতার অংশ (টাকা)" : "Seller Share (BDT)"}</label>
                     <input
                       type="number"
                       value={splitSellerAmount}
@@ -354,7 +363,7 @@ export default function AdminDealsPage() {
                     />
                   </div>
                   <div>
-                    <label>Buyer Refund (BDT)</label>
+                    <label>{lang === "bn" ? "বায়ার রিফান্ড (টাকা)" : "Buyer Refund (BDT)"}</label>
                     <input
                       type="number"
                       value={splitBuyerAmount}
@@ -369,12 +378,12 @@ export default function AdminDealsPage() {
             {actionType === "audit" && (
               <div className="p-3 border border-amber-500/30 bg-amber-500/5 space-y-3">
                 <span className="text-xs font-bold uppercase text-amber-700 dark:text-amber-300 block">
-                  Manual Courier Consignment Slip Review
+                  {lang === "bn" ? "ম্যানুয়াল কুরিয়ার চালান রসিদ পর্যালোচনা" : "Manual Courier Consignment Slip Review"}
                 </span>
                 <div className="text-xs space-y-1">
-                  <div>Courier: <strong>{activeDeal.courier_name}</strong></div>
-                  <div>Courier Contact Phone: <strong>{activeDeal.courier_phone || "N/A"}</strong></div>
-                  <div>Audit Status: <strong>{activeDeal.manual_audit_status}</strong></div>
+                  <div>{lang === "bn" ? "কুরিয়ার:" : "Courier:"} <strong>{activeDeal.courier_name}</strong></div>
+                  <div>{lang === "bn" ? "কুরিয়ার ফোন নম্বর:" : "Courier Contact Phone:"} <strong>{activeDeal.courier_phone || "N/A"}</strong></div>
+                  <div>{lang === "bn" ? "অডিট স্ট্যাটাস:" : "Audit Status:"} <strong>{activeDeal.manual_audit_status}</strong></div>
                 </div>
                 {activeDeal.has_consignment_slip && (
                   <button
@@ -382,7 +391,7 @@ export default function AdminDealsPage() {
                     onClick={() => setPreviewImage(`${API}/deals/${activeDeal.code}/consignment-slip`)}
                     className="btn text-xs py-1 px-3"
                   >
-                    Open Consignment Slip Image 🔍
+                    {lang === "bn" ? "চালান রসিদের ছবি দেখুন 🔍" : "Open Consignment Slip Image 🔍"}
                   </button>
                 )}
                 <div className="flex gap-2 pt-2 border-t">
@@ -392,7 +401,7 @@ export default function AdminDealsPage() {
                     disabled={submitting}
                     className="btn-success text-xs flex-1"
                   >
-                    ✓ Approve Slip
+                    {lang === "bn" ? "✓ রসিদ অনুমোদন" : "✓ Approve Slip"}
                   </button>
                   <button
                     type="button"
@@ -400,7 +409,7 @@ export default function AdminDealsPage() {
                     disabled={submitting}
                     className="btn-danger text-xs flex-1"
                   >
-                    ✕ Reject Slip
+                    {lang === "bn" ? "✕ রসিদ প্রত্যাখ্যান" : "✕ Reject Slip"}
                   </button>
                 </div>
               </div>
@@ -408,13 +417,19 @@ export default function AdminDealsPage() {
 
             {actionType !== "audit" && (
               <div>
-                <label>Administrative Justification / Audit Reason *</label>
+                <label>
+                  {lang === "bn" ? "প্রশাসনিক সিদ্ধান্ত / অডিটের কারণ *" : "Administrative Justification / Audit Reason *"}
+                </label>
                 <textarea
                   required
                   rows={3}
                   value={adminNotes}
                   onChange={(e) => setAdminNotes(e.target.value)}
-                  placeholder="Mandatory audit log justification recorded in permanent ledger"
+                  placeholder={
+                    lang === "bn"
+                      ? "স্থায়ী লেজারে লিপিবদ্ধ করার জন্য বাধ্যতামূলক কারণ লিখুন"
+                      : "Mandatory audit log justification recorded in permanent ledger"
+                  }
                 />
               </div>
             )}
@@ -429,7 +444,7 @@ export default function AdminDealsPage() {
                   }}
                   className="btn-ghost w-1/3"
                 >
-                  Cancel
+                  {lang === "bn" ? "বাতিল" : "Cancel"}
                 </button>
                 <button
                   type="submit"
@@ -442,7 +457,11 @@ export default function AdminDealsPage() {
                       : "btn"
                   }`}
                 >
-                  {submitting ? "Executing..." : `Execute ${actionType.toUpperCase()}`}
+                  {submitting
+                    ? (lang === "bn" ? "প্রক্রিয়াধীন..." : "Executing...")
+                    : lang === "bn"
+                    ? "নিশ্চিত করুন"
+                    : `Execute ${actionType.toUpperCase()}`}
                 </button>
               </div>
             )}
@@ -455,9 +474,11 @@ export default function AdminDealsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
           <div className="box max-w-2xl w-full p-4 border-2 border-accent bg-white dark:bg-black space-y-3">
             <div className="flex items-center justify-between border-b pb-2">
-              <span className="font-bold text-sm">Attachment Viewer</span>
+              <span className="font-bold text-sm">
+                {lang === "bn" ? "সংযুক্তি প্রদর্শক" : "Attachment Viewer"}
+              </span>
               <button onClick={() => setPreviewImage(null)} className="btn-ghost text-xs py-1 px-2.5">
-                ✕ Close
+                {lang === "bn" ? "✕ বন্ধ করুন" : "✕ Close"}
               </button>
             </div>
             <div className="flex items-center justify-center max-h-[75vh] overflow-hidden">
