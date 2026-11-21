@@ -57,13 +57,13 @@ export default function DealsListPage() {
       <div className="flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between">
         <div className="flex flex-wrap gap-1 border-b lg:border-b-0 border-neutral-200 dark:border-neutral-800 pb-2 lg:pb-0">
           {[
-            { id: "all", label: "All Deals" },
-            { id: "created", label: "Awaiting Payment" },
-            { id: "held", label: "Funds Held" },
-            { id: "shipped", label: "In Transit" },
-            { id: "delivered", label: "Delivered" },
-            { id: "disputed", label: "Disputed" },
-            { id: "released", label: "Completed" },
+            { id: "all", label: t("allDealsTab") },
+            { id: "created", label: t("awaitingPaymentTab") },
+            { id: "held", label: t("fundsHeldTab") },
+            { id: "shipped", label: t("inTransitTab") },
+            { id: "delivered", label: t("deliveredTab") },
+            { id: "disputed", label: t("disputedTab") },
+            { id: "released", label: t("completedTab") },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -85,16 +85,16 @@ export default function DealsListPage() {
             onChange={(e) => setTypeFilter(e.target.value)}
             className="w-auto text-xs py-1.5 px-3 border border-neutral-300 dark:border-neutral-700 bg-transparent"
           >
-            <option value="all">All Categories</option>
-            <option value="product">Product (Courier)</option>
-            <option value="rental">Rental Booking</option>
-            <option value="service">Service Handover</option>
+            <option value="all">{t("allCategories")}</option>
+            <option value="product">{t("productCourier")}</option>
+            <option value="rental">{t("rentalAdvance")}</option>
+            <option value="service">{t("serviceHandover")}</option>
           </select>
 
           <form onSubmit={handleSearch} className="flex gap-1">
             <input
               type="text"
-              placeholder="Search by code, product..."
+              placeholder={t("searchPlaceholder")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-48 text-xs py-1 px-2 border border-neutral-300 dark:border-neutral-700"
@@ -118,12 +118,12 @@ export default function DealsListPage() {
           <table className="w-full text-left text-sm">
             <thead className="bg-neutral-50 dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 text-xs uppercase font-semibold text-neutral-500">
               <tr>
-                <th className="px-4 py-3">Code / Product</th>
-                <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3">Counterparty</th>
-                <th className="px-4 py-3">Total Held</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Created</th>
+                <th className="px-4 py-3">{t("deal")}</th>
+                <th className="px-4 py-3">{t("type")}</th>
+                <th className="px-4 py-3">{t("counterparty")}</th>
+                <th className="px-4 py-3">{t("totalHeld")}</th>
+                <th className="px-4 py-3">{t("status")}</th>
+                <th className="px-4 py-3">{t("date")}</th>
                 <th className="px-4 py-3 text-right">Action</th>
               </tr>
             </thead>

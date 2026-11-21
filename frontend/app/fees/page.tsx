@@ -3,43 +3,43 @@ import Link from "next/link";
 import { useI18n } from "@/lib/i18n";
 
 export default function FeesPage() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-12 space-y-10">
       <div className="space-y-3 border-b border-neutral-200 dark:border-neutral-800 pb-6">
-        <span className="text-xs font-semibold uppercase tracking-wider text-accent">Pricing</span>
+        <span className="text-xs font-semibold uppercase tracking-wider text-accent">{lang === "bn" ? "ফি ও সার্ভিস চার্জ" : "Pricing"}</span>
         <h1 className="text-3xl font-bold tracking-tight">{t("feesTitle")}</h1>
         <p className="text-neutral-600 dark:text-neutral-400">{t("feesText")}</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="box p-6 space-y-3">
-          <span className="text-xs font-bold uppercase tracking-wider text-accent">Standard Escrow</span>
+          <span className="text-xs font-bold uppercase tracking-wider text-accent">{lang === "bn" ? "স্ট্যান্ডার্ড এসক্রো" : "Standard Escrow"}</span>
           <div className="text-4xl font-extrabold text-neutral-900 dark:text-neutral-100">2%</div>
-          <p className="text-xs text-neutral-500">Minimum fee: 10 BDT per transaction</p>
+          <p className="text-xs text-neutral-500">{lang === "bn" ? "সর্বনিম্ন ফি: প্রতি লেনদেনে ১০ টাকা" : "Minimum fee: 10 BDT per transaction"}</p>
           <ul className="text-sm space-y-2 text-neutral-600 dark:text-neutral-400 pt-3 border-t border-neutral-200 dark:border-neutral-800">
-            <li>✓ Deducted only on successful completion</li>
-            <li>✓ Free for buyers (no added fee on deposit)</li>
-            <li>✓ Automated courier tracking included</li>
-            <li>✓ Full dispute mediation support</li>
+            <li>{lang === "bn" ? "✓ শুধুমাত্র সফলভাবে কাজ শেষ হলে কর্তন করা হয়" : "✓ Deducted only on successful completion"}</li>
+            <li>{lang === "bn" ? "✓ ক্রেতাদের জন্য সম্পূর্ণ ফ্রি (টাকা জমার সময় কোনো ফি নেই)" : "✓ Free for buyers (no added fee on deposit)"}</li>
+            <li>{lang === "bn" ? "✓ স্বয়ংক্রিয় কুরিয়ার ট্র্যাকিং সুবিধা অন্তর্ভুক্ত" : "✓ Automated courier tracking included"}</li>
+            <li>{lang === "bn" ? "✓ সম্পূর্ণ বিরোধ ও মধ্যস্থতা সেবা সুবিধা" : "✓ Full dispute mediation support"}</li>
           </ul>
         </div>
 
         <div className="box p-6 space-y-3 bg-neutral-50 dark:bg-neutral-950">
-          <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">Return & Cancellation</span>
-          <div className="text-4xl font-extrabold text-neutral-900 dark:text-neutral-100">0% Added</div>
-          <p className="text-xs text-neutral-500">Standard platform fee retained on processed refunds</p>
+          <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">{lang === "bn" ? "রিটার্ন ও বাতিলকরণ" : "Return & Cancellation"}</span>
+          <div className="text-4xl font-extrabold text-neutral-900 dark:text-neutral-100">0% {lang === "bn" ? "অতিরিক্ত চার্জ" : "Added"}</div>
+          <p className="text-xs text-neutral-500">{lang === "bn" ? "প্রক্রিয়াকৃত রিফান্ডে স্ট্যান্ডার্ড প্ল্যাটফর্ম ফি প্রযোজ্য" : "Standard platform fee retained on processed refunds"}</p>
           <ul className="text-sm space-y-2 text-neutral-600 dark:text-neutral-400 pt-3 border-t border-neutral-200 dark:border-neutral-800">
-            <li>✓ Delivery charge compensation to seller for refused parcels</li>
-            <li>✓ Fast automated refund to buyer</li>
-            <li>✓ Transparent ledger records</li>
+            <li>{lang === "bn" ? "✓ প্রত্যাখ্যাত পার্সেলের ক্ষেত্রে বিক্রেতার জন্য ডেলিভারি ক্ষতিপূরণ" : "✓ Delivery charge compensation to seller for refused parcels"}</li>
+            <li>{lang === "bn" ? "✓ ক্রেতাকে দ্রুত স্বয়ংক্রিয় রিফান্ড প্রদান" : "✓ Fast automated refund to buyer"}</li>
+            <li>{lang === "bn" ? "✓ স্বচ্ছ আর্থিক লেজার রেকর্ড" : "✓ Transparent ledger records"}</li>
           </ul>
         </div>
       </div>
 
       <div className="box p-5 space-y-2 text-xs text-neutral-500 bg-neutral-50 dark:bg-neutral-900">
-        <strong className="block text-neutral-800 dark:text-neutral-200">Compliance Statement:</strong>
+        <strong className="block text-neutral-800 dark:text-neutral-200">{lang === "bn" ? "নিয়ন্ত্রণ ও নিরাপত্তা বিবৃতি:" : "Compliance Statement:"}</strong>
         <p>{t("regulatoryNotice")}</p>
       </div>
 

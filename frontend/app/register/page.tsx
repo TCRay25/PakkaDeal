@@ -61,22 +61,22 @@ export default function RegisterPage() {
   return (
     <div className="mx-auto max-w-md py-12 px-4 space-y-8">
       <div className="text-center space-y-2">
-        <h1 className="text-2xl font-bold tracking-tight">Create an Escrow Account</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{t("createAccount")}</h1>
         <p className="text-sm text-neutral-500">
-          Sign up to buy, sell, or rent with 100% escrow fraud protection in Bangladesh.
+          {t("createAccountSub")}
         </p>
       </div>
 
       {step === "details" ? (
         <form onSubmit={handleSendOtp} className="box p-6 space-y-4">
           <div>
-            <label htmlFor="reg-name-input">Your Full Name</label>
+            <label htmlFor="reg-name-input">{t("fullName")}</label>
             <input
               id="reg-name-input"
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Tanvir Ahmed"
+              placeholder={t("fullNamePlaceholder")}
             />
           </div>
 
@@ -92,17 +92,17 @@ export default function RegisterPage() {
               className="font-mono"
             />
             <span className="text-xs text-neutral-500 mt-1 block">
-              Used to secure your deals and receive courier delivery notifications.
+              {t("phoneHelp")}
             </span>
           </div>
 
           <div>
-            <label htmlFor="reg-page-name-input">Shop or Organization Name (Optional)</label>
+            <label htmlFor="reg-page-name-input">{t("shopOrgNameOptional")}</label>
             <input
               id="reg-page-name-input"
               value={pageName}
               onChange={(e) => setPageName(e.target.value)}
-              placeholder="e.g. Dhaka Gadgets or Niloy Flats"
+              placeholder={t("shopOrgPlaceholder")}
             />
           </div>
 
@@ -123,13 +123,12 @@ export default function RegisterPage() {
           {err && <p className="text-xs text-red-600 dark:text-red-400">{err}</p>}
 
           <button type="submit" disabled={loading} className="btn w-full py-2.5">
-            {loading ? t("loading") : "Send Verification Code"}
+            {loading ? t("loading") : t("sendCode")}
           </button>
 
           <div className="pt-2 text-center text-xs text-neutral-500 border-t border-neutral-200 dark:border-neutral-800">
-            Already have an account?{" "}
             <Link href="/login" className="text-accent font-semibold hover:underline">
-              Log in here →
+              {t("alreadyHaveAccount")}
             </Link>
           </div>
         </form>
@@ -148,9 +147,11 @@ export default function RegisterPage() {
               value={otp}
               onChange={(e) => setOtp(e.target.value)}
               placeholder="123456"
-              className="font-mono text-center tracking-widest text-lg"
+              className="font-mono text-center text-lg tracking-widest font-bold"
             />
-            <p className="text-xs text-neutral-500 mt-1">{t("demoCode")}</p>
+            <span className="text-xs text-neutral-500 mt-1 block text-center">
+              {t("demoCode")}
+            </span>
           </div>
 
           {err && <p className="text-xs text-red-600 dark:text-red-400">{err}</p>}
@@ -161,10 +162,10 @@ export default function RegisterPage() {
               onClick={() => setStep("details")}
               className="btn-ghost w-1/3"
             >
-              Back
+              {t("cancel")}
             </button>
             <button type="submit" disabled={loading} className="btn w-2/3">
-              {loading ? t("loading") : "Confirm & Register"}
+              {loading ? t("loading") : t("register")}
             </button>
           </div>
         </form>

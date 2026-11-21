@@ -64,7 +64,7 @@ export default function CreateDealPage() {
       <div className="border-b border-neutral-200 dark:border-neutral-800 pb-4">
         <h1 className="text-2xl font-bold tracking-tight">{t("newDeal")}</h1>
         <p className="text-sm text-neutral-500">
-          Create an escrow-backed agreement. Funds will be held securely until terms are met.
+          {t("newDealSub")}
         </p>
       </div>
 
@@ -75,9 +75,9 @@ export default function CreateDealPage() {
             <label>{t("dealType")}</label>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {[
-                { id: "product", label: "Product (Courier)" },
-                { id: "rental", label: "Rental Advance" },
-                { id: "service", label: "Service Handover" },
+                { id: "product", label: t("productCourier") },
+                { id: "rental", label: t("rentalAdvance") },
+                { id: "service", label: t("serviceHandover") },
               ].map((dt) => (
                 <button
                   key={dt.id}
@@ -254,7 +254,7 @@ export default function CreateDealPage() {
                     className="font-mono text-sm"
                   />
                   <span className="text-xs text-neutral-500 mt-1 block">
-                    Amount compensated to seller if order is refused at doorstep or returned.
+                    {t("returnChargeHelp")}
                   </span>
                 </div>
               )}
@@ -272,17 +272,17 @@ export default function CreateDealPage() {
         <div className="lg:col-span-5 space-y-4">
           <div className="box p-5 border-2 border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-950 space-y-4 sticky top-20">
             <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-500 border-b border-neutral-200 dark:border-neutral-800 pb-2">
-              Escrow Summary Preview
+              {t("escrowSummaryPreview")}
             </h3>
 
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-neutral-500">Agreed Item Price:</span>
+                <span className="text-neutral-500">{t("agreedItemPrice")}:</span>
                 <span className="font-mono font-medium">{price.toLocaleString()} BDT</span>
               </div>
               {dealType === "product" && (
                 <div className="flex justify-between">
-                  <span className="text-neutral-500">Delivery Charge:</span>
+                  <span className="text-neutral-500">{t("deliveryChargeLabel")}:</span>
                   <span className="font-mono font-medium">{charge.toLocaleString()} BDT</span>
                 </div>
               )}
@@ -301,9 +301,9 @@ export default function CreateDealPage() {
             </div>
 
             <div className="p-3 border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-black text-xs text-neutral-600 dark:text-neutral-400 space-y-1">
-              <strong>Escrow Guarantee:</strong>
+              <strong>{t("escrowGuaranteeTitle")}:</strong>
               <p>
-                Funds are deposited by the buyer and locked in escrow. The seller only receives payout when the delivery or handover is verified.
+                {t("escrowGuaranteeText")}
               </p>
             </div>
           </div>

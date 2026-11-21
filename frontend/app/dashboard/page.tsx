@@ -42,7 +42,7 @@ export default function Dashboard() {
             {t("dashboard")}
           </h1>
           <p className="text-sm text-neutral-500">
-            Welcome back, {user.name || user.phone}. Create or manage escrow deals with any counterparty.
+            {t("welcomeBack")}, {user.name || user.phone}. {t("dashboardSub")}
           </p>
         </div>
         <Link href="/dashboard/new" className="btn text-sm">
@@ -53,38 +53,38 @@ export default function Dashboard() {
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="box p-4 border border-neutral-200 dark:border-neutral-800 space-y-1">
-          <span className="text-xs uppercase font-semibold text-neutral-500">Active Deals</span>
+          <span className="text-xs uppercase font-semibold text-neutral-500">{t("activeDeals")}</span>
           <div className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{activeDeals.length}</div>
-          <span className="text-xs text-neutral-400">Transactions in progress</span>
+          <span className="text-xs text-neutral-400">{t("transactionsInProgress")}</span>
         </div>
 
         <div className="box p-4 border border-neutral-200 dark:border-neutral-800 space-y-1">
           <span className="text-xs uppercase font-semibold text-neutral-500">{t("heldFunds")}</span>
           <div className="text-2xl font-bold text-accent font-mono">{totalHeld.toLocaleString()} BDT</div>
-          <span className="text-xs text-neutral-400">Locked in escrow vault</span>
+          <span className="text-xs text-neutral-400">{t("lockedInEscrow")}</span>
         </div>
 
         <div className="box p-4 border border-neutral-200 dark:border-neutral-800 space-y-1">
-          <span className="text-xs uppercase font-semibold text-neutral-500">Trust Score</span>
+          <span className="text-xs uppercase font-semibold text-neutral-500">{t("trust")}</span>
           <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 font-mono">
             {trustScore} / 100
           </div>
-          <span className="text-xs text-neutral-400">Verified platform rating</span>
+          <span className="text-xs text-neutral-400">{t("verifiedRating")}</span>
         </div>
 
         <div className="box p-4 border border-neutral-200 dark:border-neutral-800 space-y-1">
-          <span className="text-xs uppercase font-semibold text-neutral-500">Total Deals Recorded</span>
+          <span className="text-xs uppercase font-semibold text-neutral-500">{t("totalDealsRecorded")}</span>
           <div className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{deals.length}</div>
-          <span className="text-xs text-neutral-400">Lifetime deal count</span>
+          <span className="text-xs text-neutral-400">{t("lifetimeDealCount")}</span>
         </div>
       </div>
 
       {/* Active Deals Section */}
       <section className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold tracking-tight">Active Transactions</h2>
+          <h2 className="text-lg font-bold tracking-tight">{t("activeTransactions")}</h2>
           <Link href="/dashboard/deals" className="text-xs text-accent font-semibold hover:underline">
-            View All ({deals.length}) →
+            {t("viewAll")} ({deals.length}) →
           </Link>
         </div>
 
@@ -93,7 +93,7 @@ export default function Dashboard() {
         ) : activeDeals.length === 0 ? (
           <div className="box p-8 text-center space-y-3">
             <p className="text-sm text-neutral-500">
-              No active deals right now. You can create a deal with any buyer, seller, or partner.
+              {t("noActiveDeals")}
             </p>
             <Link href="/dashboard/new" className="btn text-xs inline-block">
               {t("createDeal")}

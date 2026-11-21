@@ -67,7 +67,7 @@ export default function Header() {
                 {t("login")}
               </Link>
               <Link href="/register" className="btn text-xs py-1.5 px-3">
-                Register
+                {t("register")}
               </Link>
             </div>
           ) : (
@@ -128,7 +128,7 @@ export default function Header() {
                 {t("login")}
               </Link>
               <Link href="/register" onClick={() => setMobileMenuOpen(false)} className="btn text-xs py-2 px-4 w-1/2 text-center">
-                Register
+                {t("register")}
               </Link>
             </div>
           ) : (

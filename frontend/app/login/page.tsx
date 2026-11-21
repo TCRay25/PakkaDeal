@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { post } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
@@ -62,14 +63,14 @@ export default function Login() {
       <div className="text-center space-y-2">
         <h1 className="text-2xl font-bold tracking-tight">{t("login")}</h1>
         <p className="text-sm text-neutral-500">
-          Enter your Bangladesh mobile number to access your escrow account.
+          {t("loginSub")}
         </p>
       </div>
 
       {/* Quick Demo Logins */}
       <div className="box p-4 bg-neutral-50 dark:bg-neutral-900 space-y-2 border border-neutral-300 dark:border-neutral-700">
         <div className="text-xs uppercase font-bold text-neutral-500 tracking-wider">
-          Demo Accounts
+          {t("demoAccounts")}
         </div>
         <div className="grid grid-cols-1 gap-2">
           <button
@@ -102,7 +103,7 @@ export default function Login() {
       {step === "phone" ? (
         <form onSubmit={sendOtp} className="box space-y-4">
           <div>
-            <label htmlFor="login-name-input">Your Name or Shop Name (Optional)</label>
+            <label htmlFor="login-name-input">{t("yourName")} ({t("shopOrgNameOptional")})</label>
             <input
               id="login-name-input"
               value={name}
@@ -129,6 +130,12 @@ export default function Login() {
           <button type="submit" disabled={loading} className="btn w-full">
             {loading ? t("loading") : t("sendCode")}
           </button>
+
+          <div className="pt-2 text-center text-xs text-neutral-500 border-t border-neutral-200 dark:border-neutral-800">
+            <Link href="/register" className="text-accent font-semibold hover:underline">
+              {t("dontHaveAccount")}
+            </Link>
+          </div>
         </form>
       ) : (
         <form onSubmit={verify} className="box space-y-4">
@@ -158,10 +165,10 @@ export default function Login() {
               onClick={() => setStep("phone")}
               className="btn-ghost w-1/3"
             >
-              Back
+              {t("cancel")}
             </button>
             <button type="submit" disabled={loading} className="btn w-2/3">
-              {loading ? t("loading") : "Verify & Sign In"}
+              {loading ? t("loading") : t("login")}
             </button>
           </div>
         </form>

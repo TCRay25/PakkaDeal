@@ -31,7 +31,7 @@ export default function WalletPage() {
       <div className="border-b border-neutral-200 dark:border-neutral-800 pb-4">
         <h1 className="text-2xl font-bold tracking-tight">{t("walletTitle")}</h1>
         <p className="text-sm text-neutral-500">
-          Immutable ledger record of all escrow deposits, payouts and refunds linked to your phone ({user.phone}).
+          {t("historySub")} ({user.phone}).
         </p>
       </div>
 
@@ -42,7 +42,7 @@ export default function WalletPage() {
           <div className="text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
             {Number(data?.total_earnings || 0).toLocaleString()} BDT
           </div>
-          <span className="text-xs text-neutral-400">Released seller payouts</span>
+          <span className="text-xs text-neutral-400">{t("releasedSellerPayouts")}</span>
         </div>
 
         <div className="box p-5 border border-neutral-200 dark:border-neutral-800 space-y-1">
@@ -50,7 +50,7 @@ export default function WalletPage() {
           <div className="text-2xl font-bold font-mono text-accent">
             {Number(data?.total_escrow_deposited || 0).toLocaleString()} BDT
           </div>
-          <span className="text-xs text-neutral-400">Funds deposited into escrow</span>
+          <span className="text-xs text-neutral-400">{t("fundsDepositedEscrow")}</span>
         </div>
 
         <div className="box p-5 border border-neutral-200 dark:border-neutral-800 space-y-1">
@@ -58,30 +58,30 @@ export default function WalletPage() {
           <div className="text-2xl font-bold font-mono text-neutral-900 dark:text-neutral-100">
             {Number(data?.total_refunds_received || 0).toLocaleString()} BDT
           </div>
-          <span className="text-xs text-neutral-400">Returned or cancelled refunds</span>
+          <span className="text-xs text-neutral-400">{t("returnedRefunds")}</span>
         </div>
       </div>
 
       {/* Ledger Table */}
       <div className="space-y-4">
-        <h2 className="text-lg font-bold tracking-tight">Personal Transaction History</h2>
+        <h2 className="text-lg font-bold tracking-tight">{t("personalHistory")}</h2>
 
         {loading ? (
           <p className="text-sm text-neutral-500">{t("loading")}</p>
         ) : !data?.transactions || data.transactions.length === 0 ? (
           <div className="box p-6 text-center text-sm text-neutral-500">
-            No ledger movements recorded yet.
+            {t("noLedgerMovements")}
           </div>
         ) : (
           <div className="overflow-x-auto border border-neutral-200 dark:border-neutral-800">
             <table className="w-full text-left text-sm">
               <thead className="bg-neutral-50 dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 text-xs uppercase font-semibold text-neutral-500">
                 <tr>
-                  <th className="px-4 py-3">Type</th>
-                  <th className="px-4 py-3">Amount</th>
-                  <th className="px-4 py-3">Deal</th>
-                  <th className="px-4 py-3">Note / Memo</th>
-                  <th className="px-4 py-3">Timestamp</th>
+                  <th className="px-4 py-3">{t("type")}</th>
+                  <th className="px-4 py-3">{t("amount")}</th>
+                  <th className="px-4 py-3">{t("deal")}</th>
+                  <th className="px-4 py-3">{t("notes")}</th>
+                  <th className="px-4 py-3">{t("date")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">

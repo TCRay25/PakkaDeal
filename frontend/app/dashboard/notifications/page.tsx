@@ -40,11 +40,11 @@ export default function NotificationsPage() {
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-neutral-200 dark:border-neutral-800 pb-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{t("notifications")}</h1>
-          <p className="text-sm text-neutral-500">Live operational alerts, deal invites, courier milestones and dispute updates.</p>
+          <p className="text-sm text-neutral-500">{t("liveOperationalAlerts")}</p>
         </div>
         {items.some((i) => !i.is_read) && (
           <button onClick={markAllRead} className="btn-ghost text-xs">
-            Mark all as read
+            {t("markAllRead")}
           </button>
         )}
       </div>
@@ -53,7 +53,7 @@ export default function NotificationsPage() {
         <p className="text-sm text-neutral-500">{t("loading")}</p>
       ) : items.length === 0 ? (
         <div className="box p-8 text-center text-sm text-neutral-500">
-          No notifications yet.
+          {t("noNotificationsYet")}
         </div>
       ) : (
         <div className="space-y-3">
@@ -86,12 +86,12 @@ export default function NotificationsPage() {
               <div className="flex items-center gap-2 shrink-0">
                 {item.deal_code && (
                   <Link href={`/deal/${item.deal_code}`} className="btn text-xs py-1 px-3">
-                    View Deal
+                    {t("viewDeal")}
                   </Link>
                 )}
                 {!item.is_read && (
                   <button onClick={() => markRead(item.id)} className="btn-ghost text-xs py-1 px-2.5">
-                    Mark Read
+                    {t("markRead")}
                   </button>
                 )}
               </div>

@@ -68,7 +68,7 @@ export default function PublicSellerPage({ params }: { params: Promise<{ id: str
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 bg-emerald-500 inline-block" />
               <span className="text-xs uppercase font-bold text-neutral-500 tracking-wider">
-                PakkaDeal Verified Merchant
+                {t("verifiedAccount")}
               </span>
             </div>
             <h1 className="text-3xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100">
@@ -87,35 +87,35 @@ export default function PublicSellerPage({ params }: { params: Promise<{ id: str
           </div>
 
           <div className="box p-4 border border-accent bg-accent/5 text-center min-w-[140px] space-y-1">
-            <span className="text-xs uppercase font-bold text-accent block">Trust Score</span>
+            <span className="text-xs uppercase font-bold text-accent block">{t("trust")}</span>
             <div className="text-3xl font-extrabold font-mono text-accent">{seller.seller_trust}</div>
-            <span className="text-xs text-neutral-500">out of 100</span>
+            <span className="text-xs text-neutral-500">/ 100</span>
           </div>
         </div>
 
         {/* Verified Stats Row */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
           <div className="p-3 border border-neutral-200 dark:border-neutral-800">
-            <span className="text-xs uppercase text-neutral-500 block">Completed</span>
+            <span className="text-xs uppercase text-neutral-500 block">{t("completedDeals")}</span>
             <span className="text-xl font-bold font-mono text-emerald-600">{stats.completed}</span>
           </div>
           <div className="p-3 border border-neutral-200 dark:border-neutral-800">
-            <span className="text-xs uppercase text-neutral-500 block">Refusals</span>
+            <span className="text-xs uppercase text-neutral-500 block">{t("doorstepRefusals")}</span>
             <span className="text-xl font-bold font-mono text-neutral-600 dark:text-neutral-400">{stats.refused}</span>
           </div>
           <div className="p-3 border border-neutral-200 dark:border-neutral-800">
-            <span className="text-xs uppercase text-neutral-500 block">Disputes</span>
+            <span className="text-xs uppercase text-neutral-500 block">{t("disputes")}</span>
             <span className="text-xl font-bold font-mono text-neutral-600 dark:text-neutral-400">{stats.disputes}</span>
           </div>
           <div className="p-3 border border-neutral-200 dark:border-neutral-800">
-            <span className="text-xs uppercase text-neutral-500 block">Delivery Success</span>
+            <span className="text-xs uppercase text-neutral-500 block">{t("risk")}</span>
             <span className="text-xl font-bold font-mono text-accent">{completionRate}%</span>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center justify-between text-xs text-neutral-500 pt-2 border-t border-neutral-200 dark:border-neutral-800">
           <span>{t("memberSince")}: {new Date(seller.created_at).toLocaleDateString()}</span>
-          <span>Escrow Protected by PakkaDeal</span>
+          <span>{t("appName")} Escrow Verified</span>
         </div>
       </div>
 

@@ -37,10 +37,10 @@ export default function MoneyBreakdown({ deal }: { deal: Deal }) {
       <div className="text-xs text-neutral-500 dark:text-neutral-400 bg-neutral-50 dark:bg-neutral-900 p-2.5 border border-neutral-200 dark:border-neutral-800">
         <span className="font-medium text-neutral-700 dark:text-neutral-300 block mb-0.5">{t("buyerRefundGuarantee")}</span>
         {deal.return_policy === "buyer_pays"
-          ? "If returned or cancelled under policy: Buyer refunded full amount minus delivery charge."
+          ? t("returnRefundPolicyBuyerPays")
           : deal.return_policy === "seller_pays"
-          ? "If returned or cancelled: Buyer receives 100% refund."
-          : "Standard handover terms apply."}
+          ? t("returnRefundPolicySellerPays")
+          : t("returnRefundPolicyStandard")}
       </div>
     </div>
   );

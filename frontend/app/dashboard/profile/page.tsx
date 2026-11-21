@@ -76,7 +76,7 @@ export default function ProfilePage() {
       <div className="border-b border-neutral-200 dark:border-neutral-800 pb-4">
         <h1 className="text-2xl font-bold tracking-tight">{t("profile")}</h1>
         <p className="text-sm text-neutral-500">
-          Your verified PakkaDeal account. You can buy, sell, rent, or provide services from this single account.
+          {t("profileSub")}
         </p>
       </div>
 
@@ -84,15 +84,15 @@ export default function ProfilePage() {
       <div className="box p-6 border-2 border-accent bg-accent/5 space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-neutral-200 dark:border-neutral-800 pb-4">
           <div className="space-y-1">
-            <span className="text-xs uppercase font-bold text-accent">Verified Account</span>
+            <span className="text-xs uppercase font-bold text-accent">{t("verifiedAccount")}</span>
             <h2 className="text-xl font-bold text-neutral-900 dark:text-neutral-100">
-              {user.name || user.page_name || "Member"}
+              {user.name || user.page_name || t("profile")}
             </h2>
             <div className="font-mono text-sm text-neutral-500">{user.phone}</div>
           </div>
 
           <div className="box p-3 border border-accent bg-white dark:bg-black text-center min-w-[120px]">
-            <span className="text-xs uppercase font-bold text-neutral-500 block">Trust Score</span>
+            <span className="text-xs uppercase font-bold text-neutral-500 block">{t("trust")}</span>
             <div className="text-2xl font-extrabold font-mono text-accent">{trustScore} / 100</div>
           </div>
         </div>
@@ -100,21 +100,21 @@ export default function ProfilePage() {
         {/* Stats Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
           <div className="p-3 border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black">
-            <span className="text-xs text-neutral-500 block uppercase">Completed Deals</span>
+            <span className="text-xs text-neutral-500 block uppercase">{t("completedDeals")}</span>
             <span className="text-lg font-bold font-mono text-emerald-600 dark:text-emerald-400">{totalCompleted}</span>
           </div>
           <div className="p-3 border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black">
-            <span className="text-xs text-neutral-500 block uppercase">Doorstep Refusals</span>
+            <span className="text-xs text-neutral-500 block uppercase">{t("doorstepRefusals")}</span>
             <span className="text-lg font-bold font-mono text-neutral-600 dark:text-neutral-400">{totalRefused}</span>
           </div>
           <div className="p-3 border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black">
-            <span className="text-xs text-neutral-500 block uppercase">Disputes</span>
+            <span className="text-xs text-neutral-500 block uppercase">{t("disputes")}</span>
             <span className="text-lg font-bold font-mono text-neutral-600 dark:text-neutral-400">{totalDisputes}</span>
           </div>
           <div className="p-3 border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black">
-            <span className="text-xs text-neutral-500 block uppercase">Public Link</span>
+            <span className="text-xs text-neutral-500 block uppercase">{t("publicLink")}</span>
             <Link href={`/seller/${user.id}`} className="text-xs font-semibold text-accent hover:underline block pt-1">
-              View Shop Profile →
+              {t("viewShopProfile")}
             </Link>
           </div>
         </div>
@@ -122,11 +122,11 @@ export default function ProfilePage() {
 
       {/* Edit Profile Form */}
       <div className="box p-6 border border-neutral-200 dark:border-neutral-800 space-y-6">
-        <h2 className="text-lg font-bold tracking-tight">Edit Profile & Shop Information</h2>
+        <h2 className="text-lg font-bold tracking-tight">{t("editProfileInfo")}</h2>
 
         <form onSubmit={handleSave} className="space-y-4 max-w-xl">
           <div>
-            <label htmlFor="edit-name-input">Full Name</label>
+            <label htmlFor="edit-name-input">{t("fullName")}</label>
             <input
               id="edit-name-input"
               value={name}

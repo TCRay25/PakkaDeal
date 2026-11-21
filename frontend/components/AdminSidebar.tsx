@@ -40,7 +40,7 @@ export default function AdminSidebar() {
           {user && (
             <div className="pt-1.5 border-t border-neutral-800">
               <div className="font-mono text-xs font-semibold text-neutral-200">{user.phone}</div>
-              <div className="text-[11px] text-neutral-400">Administrator</div>
+              <div className="text-[11px] text-neutral-400">{t("administrator")}</div>
             </div>
           )}
         </div>

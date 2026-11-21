@@ -93,13 +93,13 @@ export default function AdminOverviewPage() {
     <div className="space-y-8">
       <div className="border-b border-neutral-200 dark:border-neutral-800 pb-4 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">System Overview</h1>
+          <h1 className="text-2xl font-bold tracking-tight">{t("adminOverviewTitle")}</h1>
           <p className="text-sm text-neutral-500">
-            Central monitoring dashboard for live escrow funds, transaction volume, revenue, and pending disputes.
+            {t("adminOverviewSub")}
           </p>
         </div>
         <button onClick={loadData} className="btn-ghost text-xs py-1.5 px-3">
-          ↻ Refresh Metrics
+          ↻ {t("refreshMetrics")}
         </button>
       </div>
 
@@ -110,7 +110,7 @@ export default function AdminOverviewPage() {
           <div className="text-3xl font-extrabold font-mono text-accent">
             {Number(data?.held_amount || 0).toLocaleString()} BDT
           </div>
-          <span className="text-xs text-neutral-400">{data?.held_count || 0} active escrow deals</span>
+          <span className="text-xs text-neutral-400">{data?.held_count || 0} {t("activeEscrowDeals")}</span>
         </div>
 
         <div className="box p-5 border border-neutral-200 dark:border-neutral-800 space-y-1">
@@ -118,7 +118,7 @@ export default function AdminOverviewPage() {
           <div className="text-3xl font-extrabold font-mono text-emerald-600 dark:text-emerald-400">
             {Number(data?.fee_earned || 0).toLocaleString()} BDT
           </div>
-          <span className="text-xs text-neutral-400">Platform 2% service charges collected</span>
+          <span className="text-xs text-neutral-400">{t("platformChargesCollected")}</span>
         </div>
 
         <div className="box p-5 border border-neutral-200 dark:border-neutral-800 space-y-1">
@@ -127,7 +127,7 @@ export default function AdminOverviewPage() {
             {data?.open_disputes || 0}
           </div>
           <Link href="/admin/disputes" className="text-xs text-purple-600 dark:text-purple-400 font-semibold hover:underline block">
-            Inspect Dispute Queue →
+            {t("inspectDisputeQueue")}
           </Link>
         </div>
 
@@ -136,7 +136,7 @@ export default function AdminOverviewPage() {
           <div className="text-2xl font-bold font-mono text-neutral-800 dark:text-neutral-200">
             {Number(data?.released_amount || 0).toLocaleString()} BDT
           </div>
-          <span className="text-xs text-neutral-400">{data?.released_count || 0} completed payouts</span>
+          <span className="text-xs text-neutral-400">{data?.released_count || 0} {t("completedPayouts")}</span>
         </div>
 
         <div className="box p-5 border border-neutral-200 dark:border-neutral-800 space-y-1">
@@ -144,7 +144,7 @@ export default function AdminOverviewPage() {
           <div className="text-2xl font-bold font-mono text-rose-600">
             {Number(data?.refunded_amount || 0).toLocaleString()} BDT
           </div>
-          <span className="text-xs text-neutral-400">{data?.refunded_count || 0} buyer refunds</span>
+          <span className="text-xs text-neutral-400">{data?.refunded_count || 0} {t("buyerRefundsCount")}</span>
         </div>
 
         <div className="box p-5 border border-neutral-200 dark:border-neutral-800 space-y-1">
@@ -152,7 +152,7 @@ export default function AdminOverviewPage() {
           <div className="text-2xl font-bold font-mono text-neutral-900 dark:text-neutral-100">
             {data?.total_users || 0}
           </div>
-          <span className="text-xs text-neutral-400">Total verified accounts</span>
+          <span className="text-xs text-neutral-400">{t("verifiedAccount")}</span>
         </div>
       </div>
 

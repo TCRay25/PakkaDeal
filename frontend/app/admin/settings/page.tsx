@@ -57,10 +57,10 @@ export default function AdminSettingsPage() {
             <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 pb-2">
               <div>
                 <h2 className="text-sm font-bold uppercase tracking-wider text-neutral-900 dark:text-neutral-100">
-                  PakkaDeal Official Escrow Payment Accounts (এসক্রো মার্চেন্ট নম্বর)
+                  {t("officialEscrowAccountsTitle")}
                 </h2>
                 <p className="text-xs text-neutral-500 mt-0.5">
-                  The merchant numbers and bank account where buyers will deposit escrow funds to hold securely during a deal.
+                  {t("officialEscrowAccountsSub")}
                 </p>
               </div>
               <span className="px-2 py-0.5 text-xs bg-accent text-white font-mono font-bold">
@@ -70,7 +70,7 @@ export default function AdminSettingsPage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
-                <label htmlFor="escrow-bkash-merchant">bKash Merchant / Wallet Number</label>
+                <label htmlFor="escrow-bkash-merchant">{t("bkashMerchantLabel")}</label>
                 <input
                   id="escrow-bkash-merchant"
                   value={settings["escrow_bkash_merchant"] || "01711-000000"}
@@ -78,11 +78,11 @@ export default function AdminSettingsPage() {
                   placeholder="01711-000000"
                   className="font-mono text-sm bg-white dark:bg-black"
                 />
-                <span className="text-[11px] text-neutral-500 mt-1 block">Official bKash escrow recipient</span>
+                <span className="text-[11px] text-neutral-500 mt-1 block">{t("bkashMerchantHelp")}</span>
               </div>
 
               <div>
-                <label htmlFor="escrow-nagad-merchant">Nagad Merchant / Wallet Number</label>
+                <label htmlFor="escrow-nagad-merchant">{t("nagadMerchantLabel")}</label>
                 <input
                   id="escrow-nagad-merchant"
                   value={settings["escrow_nagad_merchant"] || "01911-000000"}
@@ -90,11 +90,11 @@ export default function AdminSettingsPage() {
                   placeholder="01911-000000"
                   className="font-mono text-sm bg-white dark:bg-black"
                 />
-                <span className="text-[11px] text-neutral-500 mt-1 block">Official Nagad escrow recipient</span>
+                <span className="text-[11px] text-neutral-500 mt-1 block">{t("nagadMerchantHelp")}</span>
               </div>
 
               <div>
-                <label htmlFor="escrow-rocket-merchant">Rocket / Upay Number</label>
+                <label htmlFor="escrow-rocket-merchant">{t("rocketMerchantLabel")}</label>
                 <input
                   id="escrow-rocket-merchant"
                   value={settings["escrow_rocket_merchant"] || "01811-000000"}
@@ -102,13 +102,13 @@ export default function AdminSettingsPage() {
                   placeholder="01811-000000"
                   className="font-mono text-sm bg-white dark:bg-black"
                 />
-                <span className="text-[11px] text-neutral-500 mt-1 block">Official Rocket/DBBL recipient</span>
+                <span className="text-[11px] text-neutral-500 mt-1 block">{t("rocketMerchantHelp")}</span>
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-neutral-200 dark:border-neutral-800">
               <div>
-                <label htmlFor="escrow-bank-name">Escrow Bank Partner</label>
+                <label htmlFor="escrow-bank-name">{t("bankPartnerName")}</label>
                 <input
                   id="escrow-bank-name"
                   value={settings["escrow_bank_name"] || "City Bank Ltd (Gulshan Branch)"}
@@ -119,7 +119,7 @@ export default function AdminSettingsPage() {
               </div>
 
               <div>
-                <label htmlFor="escrow-bank-account">Escrow Bank Account & Holder</label>
+                <label htmlFor="escrow-bank-account">{t("bankAccountDetails")}</label>
                 <input
                   id="escrow-bank-account"
                   value={settings["escrow_bank_account"] || "PakkaDeal Escrow Services Ltd (A/C: 150239482001)"}
@@ -131,7 +131,7 @@ export default function AdminSettingsPage() {
             </div>
 
             <div>
-              <label htmlFor="escrow-instructions">Buyer Checkout Instructions (Bangla / English)</label>
+              <label htmlFor="escrow-instructions">{t("buyerCheckoutInstructions")}</label>
               <textarea
                 id="escrow-instructions"
                 rows={2}
@@ -139,7 +139,7 @@ export default function AdminSettingsPage() {
                 onChange={(e) => handleChange("escrow_payment_instructions", e.target.value)}
                 className="text-xs bg-white dark:bg-black"
               />
-              <span className="text-[11px] text-neutral-500 mt-0.5 block">Instructions shown to the buyer on the payment screen.</span>
+              <span className="text-[11px] text-neutral-500 mt-0.5 block">{t("officialMerchantNumber")}</span>
             </div>
           </div>
 

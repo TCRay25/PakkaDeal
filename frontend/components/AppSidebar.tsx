@@ -42,10 +42,10 @@ export default function AppSidebar() {
 
             <div>
               <div className="font-semibold text-sm truncate text-neutral-900 dark:text-neutral-100">
-                {user.name || user.page_name || "User Account"}
+                {user.name || user.page_name || t("profile")}
               </div>
               <div className="text-[11px] text-neutral-500">
-                Verified Account
+                {t("verifiedAccount")}
               </div>
             </div>
           </div>

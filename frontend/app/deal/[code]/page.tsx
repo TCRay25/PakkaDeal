@@ -12,7 +12,7 @@ import MoneyBreakdown from "@/components/MoneyBreakdown";
 export default function DealPage({ params }: { params: Promise<{ code: string }> }) {
   const resolvedParams = use(params);
   const code = resolvedParams.code;
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { user } = useAuth();
   const router = useRouter();
 
@@ -84,11 +84,11 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
   const handlePay = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!senderPhone.trim()) {
-      alert("Please enter the sender phone number (প্রেরক নম্বর দিন)");
+      alert(t("enterSenderPhoneAlert"));
       return;
     }
     if (!trxId.trim()) {
-      alert("Please enter the Transaction ID (বিকাশ বা নগদ TrxID দিন)");
+      alert(t("enterTrxIdAlert"));
       return;
     }
     setSubmitting(true);
@@ -122,7 +122,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
   };
 
   const handleConfirm = async () => {
-    if (!confirm("Are you sure you want to confirm? This will permanently release escrow funds to the seller.")) return;
+    if (!confirm(t("confirmReleaseWarning"))) return;
     setSubmitting(true);
     try {
       await post(`/deals/${deal.code}/confirm`);
@@ -144,7 +144,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
   };
 
   const handleRequestReturn = async () => {
-    const reason = prompt("Enter return reason:");
+    const reason = prompt(t("returnReasonPrompt"));
     if (!reason) return;
     try {
       await post(`/deals/${deal.code}/request-return`, { reason });
@@ -242,7 +242,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                 <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 pb-1.5">
                   <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                    Escrow Vault Funded & Locked (টাকা পাক্কাডিল ভল্টে সুরক্ষিত)
+                    {t("escrowVaultFunded")}
                   </span>
                   <span className="font-mono text-xs font-bold text-neutral-900 dark:text-neutral-100">
                     {deal.total_amount.toLocaleString()} BDT
@@ -250,15 +250,15 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
                   <div>
-                    <span className="text-neutral-500 block text-[11px]">Gateway:</span>
+                    <span className="text-neutral-500 block text-[11px]">{t("gateway")}:</span>
                     <span className="font-semibold">{deal.payment_method || "bKash"} Escrow</span>
                   </div>
                   <div>
-                    <span className="text-neutral-500 block text-[11px]">Sender Phone:</span>
+                    <span className="text-neutral-500 block text-[11px]">{t("senderPhone")}:</span>
                     <span className="font-mono">{deal.payment_sender || deal.buyer_phone}</span>
                   </div>
                   <div>
-                    <span className="text-neutral-500 block text-[11px]">Transaction ID:</span>
+                    <span className="text-neutral-500 block text-[11px]">{t("trxId")}:</span>
                     <span className="font-mono font-bold text-accent">{deal.payment_trx_id || "TRX-VERIFIED"}</span>
                   </div>
                 </div>
@@ -362,8 +362,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
             {deal.status === "delivered" && (
               <div className="space-y-4">
                 <div className="p-3 border border-amber-500/30 bg-amber-500/10 text-xs text-amber-800 dark:text-amber-200">
-                  <strong>Inspection Window Active:</strong> Courier confirmed delivery. Buyer has 72 hours to inspect item and confirm receipt.
-                  If no issue is reported, funds will release automatically to the seller.
+                  <strong>{t("inspectionWindowActive")}:</strong> {t("inspectionWindowText")}
                 </div>
 
                 <div className="flex flex-wrap gap-3">
@@ -414,8 +413,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
             {deal.status === "disputed" && (
               <div className="space-y-3">
                 <div className="p-3 border border-purple-500/40 bg-purple-500/10 text-xs text-purple-800 dark:text-purple-200">
-                  <strong>Dispute Under Admin Review:</strong> All funds are frozen in escrow. The admin will inspect uploaded photos,
-                  courier delivery logs, and AI recommendation before releasing or refunding funds.
+                  <strong>{t("disputeUnderReview")}:</strong> {t("disputeUnderReviewText")}
                 </div>
                 {me.is_admin && (
                   <Link href="/admin/disputes" className="btn text-xs">
@@ -428,14 +426,14 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
             {/* State: released */}
             {deal.status === "released" && (
               <div className="p-3 border border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-800 dark:text-emerald-200">
-                <strong>Deal Completed:</strong> Seller payout of {deal.seller_payout.toLocaleString()} BDT released. 2% service fee collected.
+                <strong>{t("dealCompleted")}:</strong> {t("dealCompletedText")} ({deal.seller_payout.toLocaleString()} BDT)
               </div>
             )}
 
             {/* State: refunded */}
             {deal.status === "refunded" && (
               <div className="p-3 border border-rose-500/30 bg-rose-500/10 text-xs text-rose-800 dark:text-rose-200">
-                <strong>Escrow Refunded:</strong> Outcome: {deal.outcome || "Refund processed to buyer."}
+                <strong>{t("escrowRefunded")}:</strong> {deal.outcome || t("escrowRefundedText")}
               </div>
             )}
           </div>
@@ -518,7 +516,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
           {/* Counterparties Card */}
           <div className="box p-5 border border-neutral-200 dark:border-neutral-800 space-y-4">
             <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-500 border-b border-neutral-200 dark:border-neutral-800 pb-2">
-              Counterparties
+              {t("counterparties")}
             </h3>
 
             {/* Seller */}
@@ -527,9 +525,9 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                 <span className="text-xs uppercase font-semibold text-neutral-500">{t("seller")}</span>
                 <span className="text-xs font-bold text-accent font-mono">{seller.seller_trust}/100</span>
               </div>
-              <div className="font-semibold">{seller.page_name || seller.name || "Seller"}</div>
+              <div className="font-semibold">{seller.page_name || seller.name || t("seller")}</div>
               <Link href={`/seller/${seller.id}`} className="text-xs text-accent hover:underline block">
-                View Public Shop Profile →
+                {t("viewShopProfile")}
               </Link>
             </div>
 
@@ -541,16 +539,16 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                   {buyer.trust_score}/100
                 </span>
               </div>
-              <div className="font-semibold">{buyer.name || "Buyer"}</div>
+              <div className="font-semibold">{buyer.name || t("buyer")}</div>
               <div className="text-xs font-mono text-neutral-500">{buyer.phone}</div>
               <div className="text-xs text-neutral-400">
-                Completed: {buyer.delivered} | Refused: {buyer.refused}
+                {t("deliveredCount")}: {buyer.delivered} | {t("refusedCount")}: {buyer.refused}
               </div>
             </div>
 
             {/* Address */}
             <div className="pt-3 border-t border-neutral-200 dark:border-neutral-800 space-y-1 text-xs text-neutral-600 dark:text-neutral-400">
-              <span className="font-semibold text-neutral-900 dark:text-neutral-100 block">Delivery / Handover:</span>
+              <span className="font-semibold text-neutral-900 dark:text-neutral-100 block">{t("deliveryHandover")}:</span>
               <p>{deal.address}, {deal.area}</p>
             </div>
           </div>
@@ -559,7 +557,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
           {me.is_seller && (
             <div className="box p-4 border border-neutral-200 dark:border-neutral-800 space-y-2">
               <div className="flex justify-between items-center">
-                <span className="text-xs uppercase font-bold text-neutral-500">Order Risk Assessment</span>
+                <span className="text-xs uppercase font-bold text-neutral-500">{t("orderRiskAssessment")}</span>
                 <span className={`text-xs font-bold font-mono px-2 py-0.5 border ${
                   deal.risk_score > 35 ? "border-rose-500 text-rose-500" : "border-emerald-600 text-emerald-600"
                 }`}>
@@ -567,7 +565,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                 </span>
               </div>
               <p className="text-xs text-neutral-500">
-                Indicators: {deal.risk_reasons || "Standard verified profile parameters."}
+                {t("indicators")}: {deal.risk_reasons || "Standard verified profile parameters."}
               </p>
             </div>
           )}
@@ -581,10 +579,10 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
             <div className="flex justify-between items-center border-b border-neutral-200 dark:border-neutral-800 pb-2">
               <div>
                 <h3 className="font-bold text-base text-neutral-900 dark:text-neutral-100">
-                  PakkaDeal Official Escrow Deposit (টাকা এসক্রো ভল্টে জমা)
+                  {t("officialEscrowDeposit")}
                 </h3>
                 <span className="text-[11px] text-accent font-semibold block">
-                  Amount to Lock in Escrow: {deal.total_amount.toLocaleString()} BDT
+                  {t("amountToLock")}: {deal.total_amount.toLocaleString()} BDT
                 </span>
               </div>
               <button type="button" onClick={() => setShowPayModal(false)} className="text-neutral-500 hover:text-black dark:hover:text-white">✕</button>
@@ -592,7 +590,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
 
             {/* Payment Method Selector */}
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold uppercase text-neutral-500">Select Gateway (পেমেন্ট মাধ্যম বেছে নিন)</label>
+              <label className="text-xs font-semibold uppercase text-neutral-500">{t("selectGateway")}</label>
               <div className="grid grid-cols-4 gap-2">
                 {(["bKash", "Nagad", "Rocket", "Bank"] as const).map((m) => (
                   <button
@@ -608,7 +606,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                         : "border-neutral-300 dark:border-neutral-700 hover:border-neutral-400 text-neutral-700 dark:text-neutral-300"
                     }`}
                   >
-                    {m === "bKash" ? "bKash বিকাশ" : m === "Nagad" ? "Nagad নগদ" : m === "Rocket" ? "Rocket রকেট" : "Bank ব্যাংক"}
+                    {m === "bKash" ? (lang === "bn" ? "বিকাশ" : "bKash") : m === "Nagad" ? (lang === "bn" ? "নগদ" : "Nagad") : m === "Rocket" ? (lang === "bn" ? "রকেট" : "Rocket") : (lang === "bn" ? "ব্যাংক" : "Bank")}
                   </button>
                 ))}
               </div>
@@ -618,7 +616,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
             <div className="p-3.5 bg-accent/5 border border-accent/30 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs uppercase font-extrabold text-accent">
-                  PakkaDeal Official {payMethod} Escrow Number:
+                  {t("officialMerchantNumber")} ({payMethod}):
                 </span>
                 <button
                   type="button"
@@ -637,7 +635,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                   }}
                   className="px-2 py-0.5 text-xs font-semibold bg-white dark:bg-black border border-accent text-accent hover:bg-accent hover:text-white"
                 >
-                  {copiedNumber ? "✓ Copied!" : "Copy Number (কপি)"}
+                  {copiedNumber ? (lang === "bn" ? "✓ কপি হয়েছে" : "✓ Copied!") : t("copyMerchantNumber")}
                 </button>
               </div>
 
@@ -654,15 +652,16 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
               </div>
 
               <p className="text-[11px] text-neutral-600 dark:text-neutral-400 leading-relaxed border-t border-accent/20 pt-1.5">
-                {data.escrow_accounts?.instructions ||
-                  "বিকাশ বা নগদ অ্যাপের 'Make Payment' অপশন থেকে পাক্কাডিল অফিসিয়াল এসক্রো মার্চেন্ট নাম্বারে সম্পূর্ণ টাকা পেমেন্ট করুন। এরপর প্রাপ্ত Transaction ID (TrxID) এবং আপনার প্রেরক নম্বর নিচে বসিয়ে কনফার্ম করুন। টাকা সরাসরি পাক্কা ডিল এসক্রো ভল্টে সুরক্ষিত থাকবে।"}
+                {lang === "bn"
+                  ? (data.escrow_accounts?.instructions || "বিকাশ বা নগদ অ্যাপের 'Make Payment' অপশন থেকে পাক্কাডিল অফিসিয়াল এসক্রো মার্চেন্ট নাম্বারে সম্পূর্ণ টাকা পেমেন্ট করুন। এরপর প্রাপ্ত Transaction ID (TrxID) এবং আপনার প্রেরক নম্বর নিচে বসিয়ে কনফার্ম করুন। টাকা সরাসরি পাক্কা ডিল এসক্রো ভল্টে সুরক্ষিত থাকবে।")
+                  : "Use the 'Make Payment' option in the bKash or Nagad app to deposit the full amount to the official PakkaDeal escrow merchant number. Then enter your sender mobile number and Transaction ID (TrxID) below to lock funds in escrow."}
               </p>
             </div>
 
             {/* Inputs: Sender Number & TrxID */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label htmlFor="pay-sender-phone">Your Sender Mobile (প্রেরক নম্বর)</label>
+                <label htmlFor="pay-sender-phone">{t("senderPhone")}</label>
                 <input
                   id="pay-sender-phone"
                   required
@@ -671,11 +670,11 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                   placeholder="e.g. 017XXXXXXXX"
                   className="font-mono text-sm"
                 />
-                <span className="text-[11px] text-neutral-500 mt-0.5 block">যে নম্বর থেকে টাকা পাঠিয়েছেন</span>
+                <span className="text-[11px] text-neutral-500 mt-0.5 block">{t("senderPhoneHelp")}</span>
               </div>
 
               <div>
-                <label htmlFor="pay-trx-id">Transaction ID (TrxID)</label>
+                <label htmlFor="pay-trx-id">{t("trxId")}</label>
                 <input
                   id="pay-trx-id"
                   required
@@ -684,23 +683,23 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                   placeholder="e.g. BLA9238DK3"
                   className="font-mono text-sm uppercase"
                 />
-                <span className="text-[11px] text-neutral-500 mt-0.5 block">এসএমএস-এ পাওয়া TrxID</span>
+                <span className="text-[11px] text-neutral-500 mt-0.5 block">{t("trxIdHelp")}</span>
               </div>
             </div>
 
             <div className="p-2.5 bg-neutral-100 dark:bg-neutral-900 text-xs text-neutral-600 dark:text-neutral-400 space-y-1">
-              <strong className="block text-neutral-900 dark:text-neutral-100">🔒 Escrow Protection Guarantee:</strong>
+              <strong className="block text-neutral-900 dark:text-neutral-100">🔒 {t("escrowGuaranteeTitle")}:</strong>
               <p>
-                আপনার টাকা বিক্রেতার অ্যাকাউন্টে যাবে না; PakkaDeal এর মার্চেন্ট একাউন্টে হোল্ড থাকবে। আপনি পার্সেল হাতে পেয়ে চেক করে কনফার্ম করলে তবেই বিক্রেতা টাকা পাবে।
+                {t("escrowGuaranteeText")}
               </p>
             </div>
 
             <div className="flex gap-2 pt-1">
               <button type="button" onClick={() => setShowPayModal(false)} className="btn-ghost w-1/3">
-                Cancel
+                {t("cancel")}
               </button>
               <button type="submit" disabled={submitting} className="btn w-2/3">
-                {submitting ? "Processing..." : `Confirm & Lock ${deal.total_amount.toLocaleString()} BDT`}
+                {submitting ? t("processing") : `${t("confirmAndLock")} (${deal.total_amount.toLocaleString()} BDT)`}
               </button>
             </div>
           </form>
@@ -735,9 +734,9 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
               />
             </div>
             <div className="flex gap-2">
-              <button type="button" onClick={() => setShowShipModal(false)} className="btn-ghost w-1/3">Cancel</button>
+              <button type="button" onClick={() => setShowShipModal(false)} className="btn-ghost w-1/3">{t("cancel")}</button>
               <button type="submit" disabled={submitting} className="btn w-2/3">
-                {submitting ? "Saving..." : "Confirm Shipment"}
+                {submitting ? t("saving") : t("confirmShipment")}
               </button>
             </div>
           </form>
@@ -773,7 +772,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                 className="text-xs"
               />
               <span className="text-xs text-neutral-500 mt-1 block">
-                Multimodal AI model will inspect the photo against the original listing description.
+                {t("why3Text")}
               </span>
             </div>
             <div>
@@ -786,9 +785,9 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
               />
             </div>
             <div className="flex gap-2">
-              <button type="button" onClick={() => setShowDisputeModal(false)} className="btn-ghost w-1/3">Cancel</button>
+              <button type="button" onClick={() => setShowDisputeModal(false)} className="btn-ghost w-1/3">{t("cancel")}</button>
               <button type="submit" disabled={submitting} className="btn-danger w-2/3">
-                {submitting ? "Submitting..." : t("submit")}
+                {submitting ? t("processing") : t("submit")}
               </button>
             </div>
           </form>
@@ -815,9 +814,9 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
               />
             </div>
             <div className="flex gap-2">
-              <button type="button" onClick={() => setShowReturnModal(false)} className="btn-ghost w-1/3">Cancel</button>
+              <button type="button" onClick={() => setShowReturnModal(false)} className="btn-ghost w-1/3">{t("cancel")}</button>
               <button type="submit" disabled={submitting} className="btn w-2/3">
-                {submitting ? "Saving..." : "Confirm Return Shipment"}
+                {submitting ? t("saving") : t("confirmReturnShipment")}
               </button>
             </div>
           </form>
