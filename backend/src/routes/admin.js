@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { q, one, isSqliteDb } from "../db.js";
-import { adminOnly, auth, fail } from "../http.js";
+import { adminOnly, auth, fail, isAdmin } from "../http.js";
+import { config } from "../config.js";
 import { adminForceRelease, adminForceRefund, adminSplitResolution } from "../services/settle.js";
 import { log } from "../services/events.js";
 
@@ -169,6 +170,7 @@ router.post("/deals/:code/audit-courier", async (req, res) => {
 
 router.get("/users", async (req, res) => {
   const { q: search } = req.query;
+  const adminPhones = config.adminPhones || ["01700000000"];
   let query = `
     select u.id, u.phone, u.name, u.role, u.page_name, u.page_url, u.seller_trust, u.buyer_trust,
            u.is_suspended, u.created_at,
@@ -178,6 +180,12 @@ router.get("/users", async (req, res) => {
     where 1=1
   `;
   const params = [];
+  if (adminPhones.length > 0) {
+    const placeholders = adminPhones.map((_, i) => `$${params.length + i + 1}`).join(",");
+    query += ` and u.phone not in (${placeholders})`;
+    params.push(...adminPhones);
+  }
+  query += ` and lower(coalesce(u.role, '')) != 'admin' and lower(coalesce(u.name, '')) not like '%admin%'`;
   if (search) {
     params.push(`%${search}%`);
     query += ` and (u.phone like $${params.length} or u.name like $${params.length} or u.page_name like $${params.length})`;
@@ -190,6 +198,9 @@ router.get("/users", async (req, res) => {
 router.post("/users/:id/suspend", async (req, res) => {
   const user = await one("select * from users where id=$1", [req.params.id]);
   if (!user) fail(404, "User not found");
+  if (isAdmin(user) || (config.adminPhones || ["01700000000"]).includes(user.phone)) {
+    fail(400, "Cannot suspend an administrator account");
+  }
   const nextState = user.is_suspended ? 0 : 1;
   await q("update users set is_suspended=$2 where id=$1", [user.id, nextState]);
   res.json({ ok: true, is_suspended: !!nextState });
