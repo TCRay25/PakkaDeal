@@ -3,7 +3,8 @@ import { useI18n } from "@/lib/i18n";
 import { Deal } from "@/lib/api";
 
 export default function MoneyBreakdown({ deal }: { deal: Deal }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
+  const cur = lang === "bn" ? " টাকা" : " BDT";
 
   return (
     <div className="box border border-neutral-200 dark:border-neutral-800 p-4 space-y-3">
@@ -13,25 +14,25 @@ export default function MoneyBreakdown({ deal }: { deal: Deal }) {
       <div className="grid grid-cols-2 gap-3 text-sm">
         <div>
           <span className="text-neutral-500 dark:text-neutral-400 block text-xs uppercase">{t("price")}</span>
-          <span className="font-semibold">{deal.price.toLocaleString()} BDT</span>
+          <span className="font-semibold">{deal.price.toLocaleString()}{cur}</span>
         </div>
         {deal.deal_type === "product" && (
           <div>
             <span className="text-neutral-500 dark:text-neutral-400 block text-xs uppercase">{t("charge")}</span>
-            <span className="font-semibold">{deal.delivery_charge.toLocaleString()} BDT</span>
+            <span className="font-semibold">{deal.delivery_charge.toLocaleString()}{cur}</span>
           </div>
         )}
         <div className="col-span-2 pt-2 border-t border-dashed border-neutral-200 dark:border-neutral-800 flex justify-between items-center">
           <span className="font-medium text-neutral-700 dark:text-neutral-300">{t("totalHeld")}</span>
-          <span className="text-base font-bold text-accent">{deal.total_amount.toLocaleString()} BDT</span>
+          <span className="text-base font-bold text-accent">{deal.total_amount.toLocaleString()}{cur}</span>
         </div>
         <div className="flex justify-between items-center col-span-2 text-xs text-neutral-500">
           <span>{t("platformFee")}</span>
-          <span>-{deal.fee_amount.toLocaleString()} BDT</span>
+          <span>-{deal.fee_amount.toLocaleString()}{cur}</span>
         </div>
         <div className="flex justify-between items-center col-span-2 pt-2 border-t border-neutral-200 dark:border-neutral-800 text-sm font-semibold">
           <span className="text-emerald-600 dark:text-emerald-400">{t("sellerPayout")}</span>
-          <span className="text-emerald-600 dark:text-emerald-400">{deal.seller_payout.toLocaleString()} BDT</span>
+          <span className="text-emerald-600 dark:text-emerald-400">{deal.seller_payout.toLocaleString()}{cur}</span>
         </div>
       </div>
       <div className="text-xs text-neutral-500 dark:text-neutral-400 bg-neutral-50 dark:bg-neutral-900 p-2.5 border border-neutral-200 dark:border-neutral-800">

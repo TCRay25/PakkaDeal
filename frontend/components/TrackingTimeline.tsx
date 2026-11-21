@@ -2,6 +2,7 @@
 import React from "react";
 import { TrackingData, Deal, API } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import { translateTrackingNote, translateCourierStatus } from "@/lib/translateTimeline";
 
 interface TrackingTimelineProps {
   tracking?: TrackingData | null;
@@ -83,7 +84,7 @@ export default function TrackingTimeline({
                 </span>
               ) : (
                 <span className="text-xs px-2 py-0.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30 font-medium">
-                  {source === "webhook" ? "Webhook Live" : "API Verified"}
+                  {source === "webhook" ? (lang === "bn" ? "ওয়েবহুক লাইভ" : "Webhook Live") : (lang === "bn" ? "এপিআই ভেরিফায়েড" : "API Verified")}
                 </span>
               )}
             </div>
@@ -103,7 +104,7 @@ export default function TrackingTimeline({
             {getStatusLabel(standardizedStatus)}
           </span>
           <span className="text-[11px] text-neutral-500">
-            {t("rawCourierStatus")}: <span className="italic">{rawStatus}</span>
+            {t("rawCourierStatus")}: <span className="italic">{translateCourierStatus(rawStatus, lang)}</span>
           </span>
         </div>
       </div>
@@ -212,7 +213,7 @@ export default function TrackingTimeline({
                     </div>
                     {evt.note && (
                       <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-1">
-                        {evt.note}
+                        {translateTrackingNote(evt.note, lang)}
                       </p>
                     )}
                     <span className="text-[11px] font-mono text-neutral-400 block mt-1">

@@ -10,6 +10,7 @@ import StatusBadge from "@/components/StatusBadge";
 import Timeline from "@/components/Timeline";
 import MoneyBreakdown from "@/components/MoneyBreakdown";
 import TrackingTimeline from "@/components/TrackingTimeline";
+import { translateDealType, translateLedgerType, translateLedgerNote } from "@/lib/translateTimeline";
 
 function useCountdown(targetIsoDate?: string | null, isPaused: boolean = false) {
   const [timeLeft, setTimeLeft] = useState<{ hours: number; minutes: number; seconds: number; expired: boolean } | null>(null);
@@ -401,7 +402,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
             <div className="flex items-center gap-3">
               <span className="font-mono text-sm font-bold text-accent">{deal.code}</span>
               <span className="text-xs uppercase px-2 py-0.5 border border-neutral-300 dark:border-neutral-700 text-neutral-500 font-semibold">
-                {deal.deal_type}
+                {translateDealType(deal.deal_type, lang)}
               </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100">
@@ -431,10 +432,12 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
           <div className="box p-6 border-2 border-accent/40 bg-accent/5 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-base font-bold text-neutral-900 dark:text-neutral-100 uppercase tracking-wide">
-                Current Escrow Phase: {deal.status.replace(/_/g, " ").toUpperCase()}
+                {lang === "bn"
+                  ? `বর্তমান এসক্রো ধাপ: ${t(("s_" + deal.status.toLowerCase()) as any) || deal.status}`
+                  : `Current Escrow Phase: ${deal.status.replace(/_/g, " ").toUpperCase()}`}
               </h2>
               <span className="text-xs font-mono font-bold text-accent">
-                Vault: {deal.total_amount.toLocaleString()} BDT
+                {lang === "bn" ? "ভল্ট:" : "Vault:"} {deal.total_amount.toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
               </span>
             </div>
 
@@ -445,18 +448,20 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 bg-emerald-500 rounded-none shadow animate-pulse" />
                     <span className="text-xs font-extrabold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
-                      Payment Received by PakkaDeal – Escrow Held
+                      {lang === "bn"
+                        ? "পাক্কাডিল পেমেন্ট গ্রহণ করেছে – এসক্রো হোল্ড"
+                        : "Payment Received by PakkaDeal – Escrow Held"}
                     </span>
                   </div>
                   <span className="font-mono text-sm font-extrabold text-neutral-900 dark:text-neutral-100">
-                    {deal.total_amount.toLocaleString()} BDT
+                    {deal.total_amount.toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
                   </span>
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
                   <div>
                     <span className="text-neutral-500 block text-[11px]">{t("gateway")}:</span>
-                    <span className="font-semibold">{deal.payment_method || "bKash"} Escrow</span>
+                    <span className="font-semibold">{deal.payment_method || "bKash"} {lang === "bn" ? "এসক্রো" : "Escrow"}</span>
                   </div>
                   <div>
                     <span className="text-neutral-500 block text-[11px]">{t("senderPhone")}:</span>
@@ -486,7 +491,9 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                     {lang === "bn" ? "২৪ ঘণ্টা অটো-রিলিজ কাউন্টডাউন" : "24-Hour Auto-Release Countdown"}
                   </span>
                   <span className="text-xs font-mono font-bold text-amber-700 dark:text-amber-300">
-                    {deal.auto_release_paused ? "PAUSED" : "ACTIVE"}
+                    {deal.auto_release_paused
+                      ? (lang === "bn" ? "স্থগিত" : "PAUSED")
+                      : (lang === "bn" ? "সক্রিয়" : "ACTIVE")}
                   </span>
                 </div>
 
@@ -543,7 +550,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                           {lang === "bn" ? "প্রদেয় অর্থ" : "Vault Amount"}
                         </span>
                         <span className="text-xl font-mono font-extrabold text-neutral-900 dark:text-neutral-100">
-                          {deal.total_amount.toLocaleString()} BDT
+                          {deal.total_amount.toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
                         </span>
                       </div>
                     </div>
@@ -589,7 +596,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                         <a
                           href={`https://wa.me/88${deal.buyer_phone.replace(/\D/g, "").slice(-11)}?text=${encodeURIComponent(
                             lang === "bn"
-                              ? `আসসালামু আলাইকুম ${deal.buyer_name}, পাক্কাডিল এসক্রোতে আপনার "${deal.product}" অর্ডারের ডিল তৈরি হয়েছে। মোট পরিমাণ: ${deal.total_amount} BDT। অর্ডারটি নিশ্চিত করতে এসক্রোতে পেমেন্ট সম্পন্ন করুন: ${typeof window !== "undefined" ? window.location.href : ""}`
+                              ? `আসসালামু আলাইকুম ${deal.buyer_name}, পাক্কাডিল এসক্রোতে আপনার "${deal.product}" অর্ডারের ডিল তৈরি হয়েছে। মোট পরিমাণ: ${deal.total_amount} টাকা। অর্ডারটি নিশ্চিত করতে এসক্রোতে পেমেন্ট সম্পন্ন করুন: ${typeof window !== "undefined" ? window.location.href : ""}`
                               : `Hello ${deal.buyer_name}, your escrow deal for "${deal.product}" is ready on PakkaDeal. Total: ${deal.total_amount} BDT. Please deposit into escrow to proceed: ${typeof window !== "undefined" ? window.location.href : ""}`
                           )}`}
                           target="_blank"
@@ -648,7 +655,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                           🔒 {lang === "bn" ? "পাক্কাডিল অফিসিয়াল এসক্রো ডিপোজিট" : "PakkaDeal Official Escrow Deposit"}
                         </span>
                         <div className="text-2xl font-extrabold text-neutral-900 dark:text-neutral-100 font-mono">
-                          {deal.total_amount.toLocaleString()} BDT
+                          {deal.total_amount.toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
                         </div>
                         <p className="text-xs text-neutral-600 dark:text-neutral-400">
                           {lang === "bn"
@@ -686,8 +693,12 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
               <div className="space-y-4">
                 <p className="text-sm text-neutral-700 dark:text-neutral-300">
                   {deal.deal_type === "product"
-                    ? "Buyer deposited full amount into escrow vault. Seller must dispatch package within agreed timeframe."
-                    : "Rental / Service deposit is locked in escrow. Complete handover and both parties confirm."}
+                    ? (lang === "bn"
+                        ? "ক্রেতা সম্পূর্ণ অর্থ এসক্রো ভল্টে জমা করেছেন। বিক্রেতাকে নির্ধারিত সময়ের মধ্যে পার্সেল পাঠাতে হবে।"
+                        : "Buyer deposited full amount into escrow vault. Seller must dispatch package within agreed timeframe.")
+                    : (lang === "bn"
+                        ? "ভাড়া / সার্ভিসের ডিপোজিট এসক্রোতে সংরক্ষিত আছে। কাজ সম্পন্ন করে উভয় পক্ষ নিশ্চিত করুন।"
+                        : "Rental / Service deposit is locked in escrow. Complete handover and both parties confirm.")}
                 </p>
 
                 <div className="flex flex-wrap gap-2">
@@ -725,26 +736,26 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                 {/* Demo courier simulation buttons */}
                 <div className="pt-2 border-t border-neutral-300 dark:border-neutral-700 space-y-2">
                   <span className="text-xs uppercase font-bold text-neutral-500 block">
-                    Demo Courier Controls (Steadfast/Pathao/RedX Simulation)
+                    {lang === "bn" ? "ডেমো কুরিয়ার কন্ট্রোল (Steadfast/Pathao/RedX সিমুলেশন)" : "Demo Courier Controls (Steadfast/Pathao/RedX Simulation)"}
                   </span>
                   <div className="flex flex-wrap gap-2">
                     <button
                       onClick={() => handleSimulateCourier("in_transit")}
                       className="btn-ghost text-xs"
                     >
-                      Simulate Hub Transit
+                      {lang === "bn" ? "হাব ট্রানজিট সিমুলেট করুন" : "Simulate Hub Transit"}
                     </button>
                     <button
                       onClick={() => handleSimulateCourier("delivered")}
                       className="btn-success text-xs"
                     >
-                      Simulate Delivered
+                      {lang === "bn" ? "ডেলিভারি সিমুলেট করুন" : "Simulate Delivered"}
                     </button>
                     <button
                       onClick={() => handleSimulateCourier("refused")}
                       className="btn-danger text-xs"
                     >
-                      Simulate Doorstep Refusal
+                      {lang === "bn" ? "ডোরস্টেপ প্রত্যাখ্যান সিমুলেট করুন" : "Simulate Doorstep Refusal"}
                     </button>
                   </div>
                 </div>
@@ -783,7 +794,9 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
             {deal.status === "return_requested" && (
               <div className="space-y-3">
                 <div className="p-3 border border-orange-500/40 bg-orange-500/10 text-xs text-orange-800 dark:text-orange-200">
-                  Buyer requested return. Buyer must dispatch the parcel back to the seller and enter return tracking.
+                  {lang === "bn"
+                    ? "ক্রেতা রিটার্নের আবেদন করেছেন। ক্রেতাকে পণ্যটি বিক্রেতার কাছে ফেরত পাঠিয়ে রিটার্ন ট্র্যাকিং নম্বর দিতে হবে।"
+                    : "Buyer requested return. Buyer must dispatch the parcel back to the seller and enter return tracking."}
                 </div>
                 {me.is_buyer && (
                   <button onClick={() => setShowReturnModal(true)} className="btn text-xs">
@@ -800,18 +813,24 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
             {deal.status === "return_shipped" && (
               <div className="space-y-3">
                 <div className="p-3 border border-orange-500/40 bg-orange-500/10 text-xs text-orange-800 dark:text-orange-200 space-y-1">
-                  <div className="font-semibold">Return in transit: {deal.return_courier_name} ({deal.return_tracking_id})</div>
-                  <div>Awaiting seller confirmation of parcel arrival.</div>
+                  <div className="font-semibold">
+                    {lang === "bn" ? "রিটার্ন পরিবহনে রয়েছে:" : "Return in transit:"} {deal.return_courier_name} ({deal.return_tracking_id})
+                  </div>
+                  <div>
+                    {lang === "bn"
+                      ? "পার্সেল বিক্রেতার কাছে পৌঁছানো এবং প্রাপ্তি নিশ্চিতকরণের অপেক্ষায়।"
+                      : "Awaiting seller confirmation of parcel arrival."}
+                  </div>
                 </div>
 
                 {me.is_seller && (
                   <button onClick={handleSellerConfirmReturn} disabled={submitting} className="btn-success text-xs">
-                    ✓ Confirm Return Received & Issue Refund
+                    {lang === "bn" ? "✓ রিটার্ন পার্সেল প্রাপ্তি নিশ্চিত করুন ও রিফান্ড দিন" : "✓ Confirm Return Received & Issue Refund"}
                   </button>
                 )}
 
                 <button onClick={() => handleSimulateCourier("delivered")} className="btn-ghost text-xs">
-                  Simulate Return Delivery (Courier Webhook)
+                  {lang === "bn" ? "রিটার্ন ডেলিভারি সিমুলেট করুন (কুরিয়ার ওয়েবহুক)" : "Simulate Return Delivery (Courier Webhook)"}
                 </button>
               </div>
             )}
@@ -824,7 +843,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                 </div>
                 {me.is_admin && (
                   <Link href="/admin/disputes" className="btn text-xs">
-                    Open Admin Queue to Decide →
+                    {lang === "bn" ? "সিদ্ধান্ত নিতে অ্যাডমিন কিউ খুলুন →" : "Open Admin Queue to Decide →"}
                   </Link>
                 )}
               </div>
@@ -833,13 +852,13 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
             {/* State: released */}
             {deal.status === "released" && (
               <div className="p-3 border border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-800 dark:text-emerald-200 space-y-1">
-                <strong>{t("dealCompleted")}:</strong> {t("dealCompletedText")} ({deal.seller_payout.toLocaleString()} BDT)
+                <strong>{t("dealCompleted")}:</strong> {t("dealCompletedText")} ({deal.seller_payout.toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"})
                 {deal.has_unboxing_photo && (
                   <button
                     onClick={() => setPreviewImage(`${API}/deals/${deal.code}/unboxing-photo`)}
                     className="text-xs text-accent font-semibold hover:underline block pt-1"
                   >
-                    📸 View Buyer Unboxing Proof →
+                    📸 {lang === "bn" ? "ক্রেতার আনবক্সিং প্রমাণ দেখুন →" : "View Buyer Unboxing Proof →"}
                   </button>
                 )}
               </div>
@@ -858,24 +877,26 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
             <div className="box p-5 border border-purple-500/30 space-y-3 bg-purple-50/50 dark:bg-purple-950/20">
               <div className="flex items-center justify-between border-b border-purple-200 dark:border-purple-800 pb-2">
                 <span className="text-xs font-bold uppercase tracking-wider text-purple-700 dark:text-purple-300">
-                  Dispute Case Details
+                  {lang === "bn" ? "বিরোধের বিবরণ" : "Dispute Case Details"}
                 </span>
                 <span className="text-xs px-2 py-0.5 border border-purple-500 font-semibold">{dispute.status}</span>
               </div>
               <div className="text-sm">
-                <strong>Reason:</strong> {dispute.reason}
+                <strong>{lang === "bn" ? "কারণ:" : "Reason:"}</strong> {dispute.reason}
               </div>
               {dispute.evidence_text && (
                 <div className="text-xs text-neutral-600 dark:text-neutral-400">
-                  <strong>Evidence:</strong> {dispute.evidence_text}
+                  <strong>{lang === "bn" ? "প্রমাণ:" : "Evidence:"}</strong> {dispute.evidence_text}
                 </div>
               )}
               {dispute.ai_summary && (
                 <div className="p-3 border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-black text-xs space-y-1">
-                  <span className="text-xs font-bold uppercase text-accent block">AI Multimodal Assessment:</span>
+                  <span className="text-xs font-bold uppercase text-accent block">
+                    {lang === "bn" ? "এআই মাল্টিমোডাল মূল্যায়ন:" : "AI Multimodal Assessment:"}
+                  </span>
                   <p>{dispute.ai_summary}</p>
                   <p className="font-semibold text-neutral-700 dark:text-neutral-300">
-                    Recommendation: {dispute.ai_recommendation.toUpperCase()}
+                    {lang === "bn" ? "সুপারিশ:" : "Recommendation:"} {dispute.ai_recommendation.toUpperCase()}
                   </p>
                 </div>
               )}
@@ -894,27 +915,27 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
           {ledger && ledger.length > 0 && (
             <div className="box p-6 space-y-4">
               <h2 className="text-base font-bold tracking-tight text-neutral-900 dark:text-neutral-100 border-b border-neutral-200 dark:border-neutral-800 pb-2">
-                Escrow Ledger Audit
+                {lang === "bn" ? "এসক্রো লেজার অডিট" : "Escrow Ledger Audit"}
               </h2>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-neutral-50 dark:bg-neutral-900 text-neutral-500 font-semibold uppercase">
                     <tr>
-                      <th className="p-2">Type</th>
-                      <th className="p-2">Amount</th>
-                      <th className="p-2">Party</th>
-                      <th className="p-2">Notes</th>
-                      <th className="p-2">Date</th>
+                      <th className="p-2">{lang === "bn" ? "ধরন" : "Type"}</th>
+                      <th className="p-2">{lang === "bn" ? "পরিমাণ" : "Amount"}</th>
+                      <th className="p-2">{lang === "bn" ? "পক্ষ / নম্বর" : "Party"}</th>
+                      <th className="p-2">{lang === "bn" ? "বিবরণ" : "Notes"}</th>
+                      <th className="p-2">{lang === "bn" ? "তারিখ" : "Date"}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
                     {ledger.map((l) => (
                       <tr key={l.id}>
-                        <td className="p-2 font-mono font-semibold uppercase">{l.transaction_type}</td>
-                        <td className="p-2 font-mono">{l.amount.toLocaleString()} BDT</td>
-                        <td className="p-2 font-mono text-neutral-500">{l.party_phone || "System"}</td>
-                        <td className="p-2 text-neutral-600 dark:text-neutral-400">{l.notes}</td>
-                        <td className="p-2 text-neutral-400 whitespace-nowrap">{new Date(l.created_at).toLocaleDateString()}</td>
+                        <td className="p-2 font-mono font-semibold uppercase">{translateLedgerType(l.transaction_type, lang)}</td>
+                        <td className="p-2 font-mono">{l.amount.toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}</td>
+                        <td className="p-2 font-mono text-neutral-500">{l.party_phone || (lang === "bn" ? "সিস্টেম" : "System")}</td>
+                        <td className="p-2 text-neutral-600 dark:text-neutral-400">{translateLedgerNote(l.notes, lang)}</td>
+                        <td className="p-2 text-neutral-400 whitespace-nowrap">{new Date(l.created_at).toLocaleDateString(lang === "bn" ? "bn-BD" : "en-GB")}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -997,7 +1018,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                   {t("officialEscrowDeposit")}
                 </h3>
                 <span className="text-[11px] text-accent font-semibold block">
-                  {t("amountToLock")}: {deal.total_amount.toLocaleString()} BDT
+                  {t("amountToLock")}: {deal.total_amount.toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
                 </span>
               </div>
               <button type="button" onClick={() => setShowPayModal(false)} className="text-neutral-500 hover:text-black dark:hover:text-white">✕</button>
@@ -1126,7 +1147,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                 {t("cancel")}
               </button>
               <button type="submit" disabled={submitting} className="btn w-2/3">
-                {submitting ? t("processing") : `${t("confirmAndLock")} (${deal.total_amount.toLocaleString()} BDT)`}
+                {submitting ? t("processing") : `${t("confirmAndLock")} (${deal.total_amount.toLocaleString()} ${lang === "bn" ? "টাকা" : "BDT"})`}
               </button>
             </div>
           </form>
@@ -1355,7 +1376,9 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
             </p>
 
             <div>
-              <label htmlFor="unboxing-photo-input">Upload Unboxing Photo / Receipt Proof (Optional)</label>
+              <label htmlFor="unboxing-photo-input">
+                {lang === "bn" ? "আনবক্সিং ছবি / রসিদের প্রমাণ আপলোড করুন (ঐচ্ছিক)" : "Upload Unboxing Photo / Receipt Proof (Optional)"}
+              </label>
               <input
                 id="unboxing-photo-input"
                 type="file"
@@ -1364,14 +1387,16 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                 className="text-xs"
               />
               <span className="text-[11px] text-neutral-500 mt-1 block">
-                Uploading unboxing proof adds extra security record to your transaction.
+                {lang === "bn"
+                  ? "আনবক্সিং প্রমাণ আপলোড করলে আপনার লেনদেনের নিরাপত্তা বৃদ্ধি পায়।"
+                  : "Uploading unboxing proof adds extra security record to your transaction."}
               </span>
             </div>
 
             <div className="flex gap-2 pt-2">
               <button type="button" onClick={() => setShowConfirmModal(false)} className="btn-ghost w-1/3">{t("cancel")}</button>
               <button type="submit" disabled={submitting} className="btn-success w-2/3">
-                {submitting ? t("processing") : "Confirm & Release Money"}
+                {submitting ? t("processing") : (lang === "bn" ? "নিশ্চিত করুন ও টাকা রিলিজ করুন" : "Confirm & Release Money")}
               </button>
             </div>
           </form>
@@ -1477,9 +1502,11 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
           <div className="box max-w-2xl w-full p-4 border-2 border-accent bg-white dark:bg-black space-y-3">
             <div className="flex items-center justify-between border-b pb-2">
-              <span className="font-bold text-sm">Attachment Viewer</span>
+              <span className="font-bold text-sm">
+                {lang === "bn" ? "সংযুক্তি প্রদর্শক" : "Attachment Viewer"}
+              </span>
               <button onClick={() => setPreviewImage(null)} className="btn-ghost text-xs py-1 px-2.5">
-                ✕ Close
+                {lang === "bn" ? "✕ বন্ধ করুন" : "✕ Close"}
               </button>
             </div>
             <div className="flex items-center justify-center max-h-[75vh] overflow-hidden">

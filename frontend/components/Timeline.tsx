@@ -1,5 +1,6 @@
 "use client";
 import { useI18n, Key } from "@/lib/i18n";
+import { translateActor, translateTimelineNote } from "@/lib/translateTimeline";
 
 type TimelineEvent = {
   id: number;
@@ -97,7 +98,7 @@ export default function Timeline({
             minute: "2-digit",
           });
 
-          const actorLabel = ev.actor ? ev.actor.toUpperCase() : "";
+          const actorLabel = ev.actor ? translateActor(ev.actor, lang) : "";
 
           return (
             <div key={ev.id} className="relative group">
@@ -128,7 +129,11 @@ export default function Timeline({
                   </div>
                   <span className="text-xs text-neutral-500">{dateStr}</span>
                 </div>
-                {ev.note && <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-1">{ev.note}</p>}
+                {ev.note && (
+                  <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-1">
+                    {translateTimelineNote(ev.note, lang)}
+                  </p>
+                )}
               </div>
             </div>
           );
