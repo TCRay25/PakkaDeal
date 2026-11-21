@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 import Logo from "./Logo";
+import NotificationBell from "./NotificationBell";
 
 export default function Header() {
   const { t, toggle, lang } = useI18n();
@@ -77,6 +78,8 @@ export default function Header() {
               </Link>
             )
           )}
+
+          {user && <NotificationBell />}
 
           <button
             onClick={toggle}

@@ -22,6 +22,7 @@ function getSqliteDb() {
   const dbPath = path.join(dataDir, "pakkadeal.sqlite");
   sqliteDb = new DatabaseSync(dbPath);
   sqliteDb.exec("PRAGMA journal_mode = WAL;");
+  sqliteDb.exec("PRAGMA busy_timeout = 5000;");
   sqliteDb.exec("PRAGMA foreign_keys = ON;");
   return sqliteDb;
 }
@@ -175,7 +176,10 @@ export async function initDb() {
       create table if not exists deal_events (
         id integer primary key autoincrement,
         deal_id int not null,
-        kind text not null,
+        kind text not null default '',
+        from_status text not null default '',
+        to_status text not null default '',
+        actor text not null default 'system',
         note text not null default '',
         created_at text not null default (datetime('now'))
       );
@@ -290,6 +294,18 @@ export async function initDb() {
         buyer_trust int not null default 60,
         ship_by timestamptz,
         confirm_by timestamptz,
+        payment_method text not null default 'bKash',
+        payment_sender text not null default '',
+        payment_trx_id text not null default '',
+        is_manual_courier int not null default 0,
+        courier_phone text not null default '',
+        consignment_slip bytea,
+        consignment_slip_type text not null default '',
+        manual_audit_status text not null default 'none',
+        auto_release_at timestamptz,
+        auto_release_paused int not null default 0,
+        unboxing_photo bytea,
+        unboxing_photo_type text not null default '',
         created_at timestamptz not null default now(),
         updated_at timestamptz not null default now()
       );
@@ -300,7 +316,10 @@ export async function initDb() {
       create table if not exists deal_events (
         id serial primary key,
         deal_id int not null references deals(id),
-        kind text not null,
+        kind text not null default '',
+        from_status text not null default '',
+        to_status text not null default '',
+        actor text not null default 'system',
         note text not null default '',
         created_at timestamptz not null default now()
       );
@@ -390,10 +409,31 @@ async function runMigrations() {
         ["payment_method", "text not null default 'bKash'"],
         ["payment_sender", "text not null default ''"],
         ["payment_trx_id", "text not null default ''"],
+        ["is_manual_courier", "int not null default 0"],
+        ["courier_phone", "text not null default ''"],
+        ["consignment_slip", "blob"],
+        ["consignment_slip_type", "text not null default ''"],
+        ["manual_audit_status", "text not null default 'none'"],
+        ["auto_release_at", "text"],
+        ["auto_release_paused", "int not null default 0"],
+        ["unboxing_photo", "blob"],
+        ["unboxing_photo_type", "text not null default ''"],
       ];
       for (const [col, colType] of neededDealCols) {
         if (!dealCols.includes(col)) {
           db.exec(`alter table deals add column ${col} ${colType}`);
+        }
+      }
+
+      const eventCols = db.prepare("pragma table_info(deal_events)").all().map(c => c.name);
+      const neededEventCols = [
+        ["from_status", "text not null default ''"],
+        ["to_status", "text not null default ''"],
+        ["actor", "text not null default 'system'"],
+      ];
+      for (const [col, colType] of neededEventCols) {
+        if (!eventCols.includes(col)) {
+          db.exec(`alter table deal_events add column ${col} ${colType}`);
         }
       }
 
@@ -456,9 +496,27 @@ async function runMigrations() {
         ["payment_method", "text not null default 'bKash'"],
         ["payment_sender", "text not null default ''"],
         ["payment_trx_id", "text not null default ''"],
+        ["is_manual_courier", "int not null default 0"],
+        ["courier_phone", "text not null default ''"],
+        ["consignment_slip", "bytea"],
+        ["consignment_slip_type", "text not null default ''"],
+        ["manual_audit_status", "text not null default 'none'"],
+        ["auto_release_at", "timestamptz"],
+        ["auto_release_paused", "int not null default 0"],
+        ["unboxing_photo", "bytea"],
+        ["unboxing_photo_type", "text not null default ''"],
       ];
       for (const [col, colType] of neededDealCols) {
         await pgPool.query(`alter table deals add column if not exists ${col} ${colType}`);
+      }
+
+      const neededEventCols = [
+        ["from_status", "text not null default ''"],
+        ["to_status", "text not null default ''"],
+        ["actor", "text not null default 'system'"],
+      ];
+      for (const [col, colType] of neededEventCols) {
+        await pgPool.query(`alter table deal_events add column if not exists ${col} ${colType}`);
       }
 
       const neededUserCols = [

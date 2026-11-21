@@ -9,6 +9,36 @@ import StatusBadge from "@/components/StatusBadge";
 import Timeline from "@/components/Timeline";
 import MoneyBreakdown from "@/components/MoneyBreakdown";
 
+function useCountdown(targetIsoDate?: string | null, isPaused: boolean = false) {
+  const [timeLeft, setTimeLeft] = useState<{ hours: number; minutes: number; seconds: number; expired: boolean } | null>(null);
+
+  useEffect(() => {
+    if (!targetIsoDate || isPaused) {
+      setTimeLeft(null);
+      return;
+    }
+
+    const updateTimer = () => {
+      const diff = new Date(targetIsoDate).getTime() - Date.now();
+      if (diff <= 0) {
+        setTimeLeft({ hours: 0, minutes: 0, seconds: 0, expired: true });
+        return;
+      }
+      const totalSec = Math.floor(diff / 1000);
+      const hours = Math.floor(totalSec / 3600);
+      const minutes = Math.floor((totalSec % 3600) / 60);
+      const seconds = totalSec % 60;
+      setTimeLeft({ hours, minutes, seconds, expired: false });
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [targetIsoDate, isPaused]);
+
+  return timeLeft;
+}
+
 export default function DealPage({ params }: { params: Promise<{ code: string }> }) {
   const resolvedParams = use(params);
   const code = resolvedParams.code;
@@ -24,12 +54,23 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
   // Modal states
   const [showPayModal, setShowPayModal] = useState(false);
   const [showShipModal, setShowShipModal] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showDisputeModal, setShowDisputeModal] = useState(false);
   const [showReturnModal, setShowReturnModal] = useState(false);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
-  // Form states
+  // Form states - Shipping
   const [courierName, setCourierName] = useState("Steadfast");
+  const [customCourierName, setCustomCourierName] = useState("");
+  const [courierPhone, setCourierPhone] = useState("");
   const [trackingId, setTrackingId] = useState("");
+  const [consignmentSlip, setConsignmentSlip] = useState<File | null>(null);
+
+  // Form states - Confirm Receipt
+  const [unboxingPhoto, setUnboxingPhoto] = useState<File | null>(null);
+
+  // Form states - Return & Dispute
+  const [returnCourierName, setReturnCourierName] = useState("Pathao");
   const [returnTrackingId, setReturnTrackingId] = useState("");
   const [disputeReason, setDisputeReason] = useState("");
   const [disputeEvidence, setDisputeEvidence] = useState("");
@@ -54,6 +95,10 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
     load();
   }, [code]);
 
+  const deal = data?.deal;
+  const isDelivered = deal?.status === "delivered";
+  const countdown = useCountdown(deal?.auto_release_at || deal?.confirm_by, !!deal?.auto_release_paused);
+
   if (loading) {
     return (
       <div className="flex h-96 items-center justify-center">
@@ -62,7 +107,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
     );
   }
 
-  if (err || !data) {
+  if (err || !data || !deal) {
     return (
       <div className="mx-auto max-w-lg py-16 text-center space-y-4">
         <h1 className="text-xl font-bold text-red-600">{t("notFound")}</h1>
@@ -72,7 +117,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
     );
   }
 
-  const { deal, seller, buyer, events, ledger, dispute, me } = data;
+  const { seller, buyer, events, ledger, dispute, me } = data;
 
   const copyLink = () => {
     navigator.clipboard.writeText(window.location.href);
@@ -109,9 +154,32 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
 
   const handleShip = async (e: React.FormEvent) => {
     e.preventDefault();
+    const isOther = courierName === "Other";
+    const finalCourierName = isOther ? (customCourierName.trim() || "Other Courier") : courierName;
+
+    if (isOther && !courierPhone.trim()) {
+      alert("Please enter the courier contact phone number");
+      return;
+    }
+    if (isOther && !consignmentSlip) {
+      alert("Please upload the consignment slip photo for manual courier audit");
+      return;
+    }
+    if (!isOther && trackingId.trim().length < 3) {
+      alert("Please enter a valid courier tracking ID");
+      return;
+    }
+
     setSubmitting(true);
     try {
-      await post(`/deals/${deal.code}/ship`, { courier_name: courierName, tracking_id: trackingId });
+      const formData = new FormData();
+      formData.append("courier_name", finalCourierName);
+      formData.append("tracking_id", trackingId.trim() || `MANUAL-${Date.now().toString(36).toUpperCase()}`);
+      formData.append("courier_phone", courierPhone.trim());
+      formData.append("is_manual_courier", isOther ? "1" : "0");
+      if (consignmentSlip) formData.append("consignment_slip", consignmentSlip);
+
+      await post(`/deals/${deal.code}/ship`, formData);
       setShowShipModal(false);
       load();
     } catch (x: any) {
@@ -121,11 +189,19 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
     }
   };
 
-  const handleConfirm = async () => {
+  const handleConfirmReceipt = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!confirm(t("confirmReleaseWarning"))) return;
     setSubmitting(true);
     try {
-      await post(`/deals/${deal.code}/confirm`);
+      if (unboxingPhoto) {
+        const formData = new FormData();
+        formData.append("unboxing_photo", unboxingPhoto);
+        await post(`/deals/${deal.code}/confirm`, formData);
+      } else {
+        await post(`/deals/${deal.code}/confirm`);
+      }
+      setShowConfirmModal(false);
       load();
     } catch (x: any) {
       alert(x.message);
@@ -156,13 +232,30 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
 
   const handleShipReturn = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (returnTrackingId.trim().length < 3) {
+      alert("Please enter return courier tracking ID");
+      return;
+    }
     setSubmitting(true);
     try {
       await post(`/deals/${deal.code}/ship-return`, {
-        return_courier_name: "Pathao",
-        return_tracking_id: returnTrackingId,
+        return_courier_name: returnCourierName,
+        return_tracking_id: returnTrackingId.trim(),
       });
       setShowReturnModal(false);
+      load();
+    } catch (x: any) {
+      alert(x.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSellerConfirmReturn = async () => {
+    if (!confirm("Confirm that you have received the return parcel? Buyer will be refunded.")) return;
+    setSubmitting(true);
+    try {
+      await post(`/deals/${deal.code}/confirm-return`);
       load();
     } catch (x: any) {
       alert(x.message);
@@ -190,6 +283,8 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
     }
   };
 
+  const isFundsHeld = ["held", "shipped", "in_transit", "delivered", "disputed"].includes(deal.status);
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-8">
       {/* Top Banner */}
@@ -198,7 +293,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
           <div className="space-y-1">
             <div className="flex items-center gap-3">
               <span className="font-mono text-sm font-bold text-accent">{deal.code}</span>
-              <span className="text-xs uppercase px-2 py-0.5 border border-neutral-300 dark:border-neutral-700 text-neutral-500">
+              <span className="text-xs uppercase px-2 py-0.5 border border-neutral-300 dark:border-neutral-700 text-neutral-500 font-semibold">
                 {deal.deal_type}
               </span>
             </div>
@@ -229,25 +324,28 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
           <div className="box p-6 border-2 border-accent/40 bg-accent/5 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-base font-bold text-neutral-900 dark:text-neutral-100 uppercase tracking-wide">
-                Current Escrow Phase: {deal.status.toUpperCase()}
+                Current Escrow Phase: {deal.status.replace(/_/g, " ").toUpperCase()}
               </h2>
               <span className="text-xs font-mono font-bold text-accent">
                 Vault: {deal.total_amount.toLocaleString()} BDT
               </span>
             </div>
 
-            {/* Escrow Deposit Receipt Proof */}
-            {deal.status !== "created" && (
-              <div className="p-3.5 border border-emerald-500/40 bg-emerald-500/5 space-y-2">
-                <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 pb-1.5">
-                  <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                    {t("escrowVaultFunded")}
-                  </span>
-                  <span className="font-mono text-xs font-bold text-neutral-900 dark:text-neutral-100">
+            {/* SELLER & BUYER ESCROW VAULT HELD CONFIRMATION CARD */}
+            {isFundsHeld && (
+              <div className="p-4 border-2 border-emerald-500/50 bg-emerald-500/10 dark:bg-emerald-950/20 space-y-3">
+                <div className="flex items-center justify-between border-b border-emerald-500/30 pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 bg-emerald-500 rounded-none shadow animate-pulse" />
+                    <span className="text-xs font-extrabold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                      Payment Received by PakkaDeal – Escrow Held
+                    </span>
+                  </div>
+                  <span className="font-mono text-sm font-extrabold text-neutral-900 dark:text-neutral-100">
                     {deal.total_amount.toLocaleString()} BDT
                   </span>
                 </div>
+
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
                   <div>
                     <span className="text-neutral-500 block text-[11px]">{t("gateway")}:</span>
@@ -262,11 +360,58 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                     <span className="font-mono font-bold text-accent">{deal.payment_trx_id || "TRX-VERIFIED"}</span>
                   </div>
                 </div>
+
+                {/* Seller Reassurance Notice */}
+                <p className="text-[11px] text-emerald-800 dark:text-emerald-300 leading-relaxed border-t border-emerald-500/20 pt-2">
+                  {lang === "bn"
+                    ? "✓ টাকা সরাসরি পাক্কাডিল অফিসিয়াল এসক্রো ভল্টে জমা রয়েছে। ক্রেতার ব্যক্তিগত কথার ওপর নির্ভর করার প্রয়োজন নেই—পাক্কাডিল স্ট্যাটাস নিশ্চিত করছে টাকা জমা আছে। বিক্রেতা এখন নিশ্চিন্তে পার্সেল পাঠাতে পারেন।"
+                    : "✓ Payment received and secured in PakkaDeal official escrow vault. Never rely on verbal or SMS confirmation from the buyer—PakkaDeal status guarantees funds are locked. The seller can safely ship the item now."}
+                </p>
               </div>
             )}
 
-            {/* State: created */}
-            {deal.status === "created" && (
+            {/* 24-HOUR AUTO-RELEASE COUNTDOWN TIMER (WHEN DELIVERED) */}
+            {isDelivered && (
+              <div className="p-4 border-2 border-amber-500/60 bg-amber-500/10 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs uppercase font-extrabold text-amber-700 dark:text-amber-300 flex items-center gap-1.5">
+                    <span className="w-2 h-2 bg-amber-500 rounded-none animate-ping" />
+                    {lang === "bn" ? "২৪ ঘণ্টা অটো-রিলিজ কাউন্টডাউন" : "24-Hour Auto-Release Countdown"}
+                  </span>
+                  <span className="text-xs font-mono font-bold text-amber-700 dark:text-amber-300">
+                    {deal.auto_release_paused ? "PAUSED" : "ACTIVE"}
+                  </span>
+                </div>
+
+                {deal.auto_release_paused ? (
+                  <div className="p-2 border border-purple-500/30 bg-purple-500/10 text-xs text-purple-700 dark:text-purple-300">
+                    {lang === "bn"
+                      ? "অটো-রিলিজ টাইমার স্থগিত রয়েছে কারণ বিরোধ বা রিটার্ন প্রক্রিয়াধীন আছে।"
+                      : "Auto-release countdown is paused due to active dispute or return request."}
+                  </div>
+                ) : countdown ? (
+                  <div className="flex items-center gap-4 py-2">
+                    <div className="font-mono text-2xl sm:text-3xl font-extrabold text-neutral-900 dark:text-neutral-100 tracking-wider">
+                      {String(countdown.hours).padStart(2, "0")}h : {String(countdown.minutes).padStart(2, "0")}m : {String(countdown.seconds).padStart(2, "0")}s
+                    </div>
+                    <span className="text-xs text-neutral-600 dark:text-neutral-400">
+                      {lang === "bn"
+                        ? "সময় শেষ হলে টাকা স্বয়ংক্রিয়ভাবে বিক্রেতাকে রিলিজ করা হবে।"
+                        : "remaining before funds auto-release to seller."}
+                    </span>
+                  </div>
+                ) : null}
+
+                <p className="text-[11px] text-neutral-600 dark:text-neutral-400">
+                  {lang === "bn"
+                    ? "ক্রেতা পণ্য যাচাই করে 'Confirm Receipt' ক্লিক করুন। কোন সমস্যা থাকলে বিরোধ উত্থাপন করুন।"
+                    : "Buyer should inspect the parcel and confirm receipt. If any damage or issue, open a dispute before the timer expires."}
+                </p>
+              </div>
+            )}
+
+            {/* State: created or payment_pending */}
+            {(deal.status === "created" || deal.status === "payment_pending") && (
               <div className="space-y-3">
                 <p className="text-sm text-neutral-700 dark:text-neutral-300">
                   {t("payHelp")}
@@ -281,7 +426,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                   </Link>
                 ) : (
                   <p className="text-xs text-neutral-500 italic">
-                    Waiting for buyer ({buyer.phone}) to deposit funds into escrow. Share the link with them.
+                    Waiting for buyer ({buyer.phone}) to deposit funds into escrow. Share the deal link with them.
                   </p>
                 )}
               </div>
@@ -292,7 +437,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
               <div className="space-y-4">
                 <p className="text-sm text-neutral-700 dark:text-neutral-300">
                   {deal.deal_type === "product"
-                    ? "Funds are securely locked in PakkaDeal escrow. Seller must dispatch within 48 hours."
+                    ? "Buyer deposited full amount into escrow vault. Seller must dispatch package within agreed timeframe."
                     : "Rental / Service deposit is locked in escrow. Complete handover and both parties confirm."}
                 </p>
 
@@ -304,7 +449,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                       </button>
                     )
                   ) : (
-                    <button onClick={handleConfirm} disabled={submitting} className="btn-success text-sm">
+                    <button onClick={handleConfirmReceipt} disabled={submitting} className="btn-success text-sm">
                       {t("confirmHandover")}
                     </button>
                   )}
@@ -319,20 +464,39 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
               </div>
             )}
 
-            {/* State: shipped */}
-            {deal.status === "shipped" && (
+            {/* State: shipped or in_transit */}
+            {(deal.status === "shipped" || deal.status === "in_transit") && (
               <div className="space-y-4">
-                <div className="p-3 border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-black text-xs space-y-1">
-                  <div className="font-semibold text-sm">
-                    Courier: {deal.courier_name} (Tracking: {deal.tracking_id})
+                <div className="p-3 border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-black text-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-sm">
+                      Courier: {deal.courier_name} (Tracking: {deal.tracking_id})
+                    </span>
+                    {deal.is_manual_courier ? (
+                      <span className="text-[10px] uppercase font-mono px-2 py-0.5 border border-amber-500 text-amber-600 font-bold">
+                        Manual Courier ({deal.manual_audit_status})
+                      </span>
+                    ) : null}
                   </div>
                   <div className="text-neutral-500">Status: {deal.courier_status || "In transit"}</div>
+                  {deal.courier_phone && (
+                    <div className="text-neutral-500 font-mono">Courier Phone: {deal.courier_phone}</div>
+                  )}
+
+                  {deal.has_consignment_slip && (
+                    <button
+                      onClick={() => setPreviewImage(`${API}/deals/${deal.code}/consignment-slip`)}
+                      className="text-xs text-accent font-semibold hover:underline block pt-1"
+                    >
+                      📄 View Consignment Slip →
+                    </button>
+                  )}
                 </div>
 
                 {/* Demo courier simulation buttons */}
                 <div className="pt-2 border-t border-neutral-300 dark:border-neutral-700 space-y-2">
                   <span className="text-xs uppercase font-bold text-neutral-500 block">
-                    Demo Courier Controls (Steadfast/Pathao Simulation)
+                    Demo Courier Controls (Steadfast/Pathao/RedX Simulation)
                   </span>
                   <div className="flex flex-wrap gap-2">
                     <button
@@ -361,14 +525,10 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
             {/* State: delivered */}
             {deal.status === "delivered" && (
               <div className="space-y-4">
-                <div className="p-3 border border-amber-500/30 bg-amber-500/10 text-xs text-amber-800 dark:text-amber-200">
-                  <strong>{t("inspectionWindowActive")}:</strong> {t("inspectionWindowText")}
-                </div>
-
                 <div className="flex flex-wrap gap-3">
                   {me.is_buyer && (
                     <>
-                      <button onClick={handleConfirm} disabled={submitting} className="btn-success text-sm py-2 px-4">
+                      <button onClick={() => setShowConfirmModal(true)} disabled={submitting} className="btn-success text-sm py-2 px-4">
                         {t("confirmReceipt")}
                       </button>
                       {deal.return_policy !== "no_returns" && (
@@ -388,23 +548,36 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
             {/* State: return_requested */}
             {deal.status === "return_requested" && (
               <div className="space-y-3">
-                <p className="text-sm">Buyer requested return. Buyer should now dispatch the parcel back to seller.</p>
+                <div className="p-3 border border-orange-500/40 bg-orange-500/10 text-xs text-orange-800 dark:text-orange-200">
+                  Buyer requested return. Buyer must dispatch the parcel back to the seller and enter return tracking.
+                </div>
                 {me.is_buyer && (
                   <button onClick={() => setShowReturnModal(true)} className="btn text-xs">
                     {t("shipReturn")}
                   </button>
                 )}
+                <button onClick={() => setShowDisputeModal(true)} className="btn-danger text-xs">
+                  {t("reportProblem")}
+                </button>
               </div>
             )}
 
             {/* State: return_shipped */}
             {deal.status === "return_shipped" && (
               <div className="space-y-3">
-                <p className="text-sm">
-                  Return in transit ({deal.return_courier_name} {deal.return_tracking_id}).
-                </p>
-                <button onClick={() => handleSimulateCourier("delivered")} className="btn-success text-xs">
-                  Simulate Return Received by Seller
+                <div className="p-3 border border-orange-500/40 bg-orange-500/10 text-xs text-orange-800 dark:text-orange-200 space-y-1">
+                  <div className="font-semibold">Return in transit: {deal.return_courier_name} ({deal.return_tracking_id})</div>
+                  <div>Awaiting seller confirmation of parcel arrival.</div>
+                </div>
+
+                {me.is_seller && (
+                  <button onClick={handleSellerConfirmReturn} disabled={submitting} className="btn-success text-xs">
+                    ✓ Confirm Return Received & Issue Refund
+                  </button>
+                )}
+
+                <button onClick={() => handleSimulateCourier("delivered")} className="btn-ghost text-xs">
+                  Simulate Return Delivery (Courier Webhook)
                 </button>
               </div>
             )}
@@ -425,8 +598,16 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
 
             {/* State: released */}
             {deal.status === "released" && (
-              <div className="p-3 border border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-800 dark:text-emerald-200">
+              <div className="p-3 border border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-800 dark:text-emerald-200 space-y-1">
                 <strong>{t("dealCompleted")}:</strong> {t("dealCompletedText")} ({deal.seller_payout.toLocaleString()} BDT)
+                {deal.has_unboxing_photo && (
+                  <button
+                    onClick={() => setPreviewImage(`${API}/deals/${deal.code}/unboxing-photo`)}
+                    className="text-xs text-accent font-semibold hover:underline block pt-1"
+                  >
+                    📸 View Buyer Unboxing Proof →
+                  </button>
+                )}
               </div>
             )}
 
@@ -467,12 +648,12 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
             </div>
           )}
 
-          {/* Audit Timeline */}
+          {/* Audit Timeline with Stepper and Next Step */}
           <div className="box p-6 space-y-4">
             <h2 className="text-base font-bold tracking-tight text-neutral-900 dark:text-neutral-100 border-b border-neutral-200 dark:border-neutral-800 pb-2">
               {t("timeline")}
             </h2>
-            <Timeline events={events} />
+            <Timeline events={events} currentStatus={deal.status} />
           </div>
 
           {/* Immutable Ledger Entries for this Deal */}
@@ -572,7 +753,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
         </div>
       </div>
 
-      {/* MODAL: Pay into Escrow with Official Merchant / Account Number */}
+      {/* MODAL: Pay into Escrow */}
       {showPayModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
           <form onSubmit={handlePay} className="box w-full max-w-lg p-6 border-2 border-accent space-y-4 bg-white dark:bg-black max-h-[95vh] overflow-y-auto">
@@ -612,7 +793,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
               </div>
             </div>
 
-            {/* Official Escrow Merchant / Payment Target Display */}
+            {/* Official Escrow Merchant Display */}
             <div className="p-3.5 bg-accent/5 border border-accent/30 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs uppercase font-extrabold text-accent">
@@ -706,37 +887,129 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
         </div>
       )}
 
-      {/* MODAL: Add Tracking / Mark Shipped */}
+      {/* MODAL: Dispatch Shipment with Pluggable / Manual Courier */}
       {showShipModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <form onSubmit={handleShip} className="box w-full max-w-md p-6 border-2 border-accent space-y-4 bg-white dark:bg-black">
+          <form onSubmit={handleShip} className="box w-full max-w-md p-6 border-2 border-accent space-y-4 bg-white dark:bg-black max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-neutral-200 dark:border-neutral-800 pb-2">
               <h3 className="font-bold text-base">{t("addShip")}</h3>
               <button type="button" onClick={() => setShowShipModal(false)} className="text-neutral-500">✕</button>
             </div>
+
             <div>
               <label htmlFor="ship-courier-select">{t("courierName")}</label>
-              <select id="ship-courier-select" value={courierName} onChange={(e) => setCourierName(e.target.value)}>
+              <select
+                id="ship-courier-select"
+                value={courierName}
+                onChange={(e) => setCourierName(e.target.value)}
+              >
                 <option value="Steadfast">Steadfast Courier</option>
                 <option value="Pathao">Pathao Courier</option>
                 <option value="RedX">RedX Logistics</option>
+                <option value="Paperfly">Paperfly</option>
+                <option value="Other">Other (Manual Tracking / Local Courier)</option>
               </select>
             </div>
-            <div>
-              <label htmlFor="ship-tracking-input">{t("trackingId")}</label>
-              <input
-                id="ship-tracking-input"
-                required
-                value={trackingId}
-                onChange={(e) => setTrackingId(e.target.value)}
-                placeholder="e.g. ST-998822"
-                className="font-mono"
-              />
-            </div>
+
+            {courierName === "Other" ? (
+              <div className="space-y-3 p-3 border border-amber-500/40 bg-amber-500/5">
+                <span className="text-xs font-bold text-amber-700 dark:text-amber-300 block uppercase">
+                  Manual Courier Verification Details
+                </span>
+
+                <div>
+                  <label htmlFor="custom-courier-name">Courier / Agency Name *</label>
+                  <input
+                    id="custom-courier-name"
+                    required
+                    value={customCourierName}
+                    onChange={(e) => setCustomCourierName(e.target.value)}
+                    placeholder="e.g. Sundarban Courier / SA Paribahan"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="courier-phone-input">Courier Contact Phone Number *</label>
+                  <input
+                    id="courier-phone-input"
+                    required
+                    value={courierPhone}
+                    onChange={(e) => setCourierPhone(e.target.value)}
+                    placeholder="e.g. 017XXXXXXXX"
+                    className="font-mono text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="consignment-slip-file">Consignment Slip Photo (Required) *</label>
+                  <input
+                    id="consignment-slip-file"
+                    type="file"
+                    required
+                    accept="image/*"
+                    onChange={(e) => setConsignmentSlip(e.target.files?.[0] || null)}
+                    className="text-xs"
+                  />
+                  <span className="text-[11px] text-neutral-500 mt-1 block">
+                    Upload physical booking receipt slip. Required for admin security audit.
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <label htmlFor="ship-tracking-input">{t("trackingId")} *</label>
+                <input
+                  id="ship-tracking-input"
+                  required
+                  value={trackingId}
+                  onChange={(e) => setTrackingId(e.target.value)}
+                  placeholder="e.g. SF-998822"
+                  className="font-mono text-sm"
+                />
+              </div>
+            )}
+
             <div className="flex gap-2">
               <button type="button" onClick={() => setShowShipModal(false)} className="btn-ghost w-1/3">{t("cancel")}</button>
               <button type="submit" disabled={submitting} className="btn w-2/3">
                 {submitting ? t("saving") : t("confirmShipment")}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* MODAL: Buyer Confirm Receipt with Optional Unboxing Proof */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <form onSubmit={handleConfirmReceipt} className="box w-full max-w-md p-6 border-2 border-emerald-600 space-y-4 bg-white dark:bg-black">
+            <div className="flex justify-between items-center border-b border-neutral-200 dark:border-neutral-800 pb-2">
+              <h3 className="font-bold text-base text-emerald-600">{t("confirmReceipt")}</h3>
+              <button type="button" onClick={() => setShowConfirmModal(false)} className="text-neutral-500">✕</button>
+            </div>
+
+            <p className="text-sm text-neutral-700 dark:text-neutral-300">
+              {t("confirmReleaseWarning")}
+            </p>
+
+            <div>
+              <label htmlFor="unboxing-photo-input">Upload Unboxing Photo / Receipt Proof (Optional)</label>
+              <input
+                id="unboxing-photo-input"
+                type="file"
+                accept="image/*"
+                onChange={(e) => setUnboxingPhoto(e.target.files?.[0] || null)}
+                className="text-xs"
+              />
+              <span className="text-[11px] text-neutral-500 mt-1 block">
+                Uploading unboxing proof adds extra security record to your transaction.
+              </span>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button type="button" onClick={() => setShowConfirmModal(false)} className="btn-ghost w-1/3">{t("cancel")}</button>
+              <button type="submit" disabled={submitting} className="btn-success w-2/3">
+                {submitting ? t("processing") : "Confirm & Release Money"}
               </button>
             </div>
           </form>
@@ -803,6 +1076,20 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
               <button type="button" onClick={() => setShowReturnModal(false)} className="text-neutral-500">✕</button>
             </div>
             <div>
+              <label htmlFor="return-courier-select">Return Courier</label>
+              <select
+                id="return-courier-select"
+                value={returnCourierName}
+                onChange={(e) => setReturnCourierName(e.target.value)}
+              >
+                <option value="Pathao">Pathao Courier</option>
+                <option value="Steadfast">Steadfast Courier</option>
+                <option value="RedX">RedX Logistics</option>
+                <option value="Paperfly">Paperfly</option>
+                <option value="Other">Other Local Courier</option>
+              </select>
+            </div>
+            <div>
               <label htmlFor="return-tracking-input">{t("returnTrackingId")}</label>
               <input
                 id="return-tracking-input"
@@ -810,7 +1097,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                 value={returnTrackingId}
                 onChange={(e) => setReturnTrackingId(e.target.value)}
                 placeholder="e.g. PT-448821"
-                className="font-mono"
+                className="font-mono text-sm"
               />
             </div>
             <div className="flex gap-2">
@@ -820,6 +1107,23 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Image Preview Modal */}
+      {previewImage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+          <div className="box max-w-2xl w-full p-4 border-2 border-accent bg-white dark:bg-black space-y-3">
+            <div className="flex items-center justify-between border-b pb-2">
+              <span className="font-bold text-sm">Attachment Viewer</span>
+              <button onClick={() => setPreviewImage(null)} className="btn-ghost text-xs py-1 px-2.5">
+                ✕ Close
+              </button>
+            </div>
+            <div className="flex items-center justify-center max-h-[75vh] overflow-hidden">
+              <img src={previewImage} alt="Attachment" className="max-h-[70vh] object-contain" />
+            </div>
+          </div>
         </div>
       )}
     </div>

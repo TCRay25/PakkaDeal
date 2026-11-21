@@ -109,12 +109,29 @@ export default function Dashboard() {
                   <th className="px-4 py-3">Counterparty</th>
                   <th className="px-4 py-3">Total Escrow</th>
                   <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">What to do next</th>
                   <th className="px-4 py-3 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
                 {activeDeals.slice(0, 6).map((deal) => {
                   const isCreator = deal.seller_id === user.id;
+
+                  const getNextAction = (s: string) => {
+                    const st = s.toLowerCase();
+                    if (st === "created") return isCreator ? "Share link with buyer" : "Pay into escrow";
+                    if (st === "payment_pending") return isCreator ? "Buyer viewed link, awaiting payment" : "Deposit into escrow vault";
+                    if (st === "held" || st === "escrow_held") return isCreator ? "Buyer paid! Ship parcel now" : "Escrow held, seller shipping";
+                    if (st === "shipped" || st === "in_transit") return isCreator ? "In transit to buyer" : "Track shipment arrival";
+                    if (st === "delivered") return isCreator ? "24h auto-release countdown active" : "Inspect item & confirm receipt";
+                    if (st === "return_requested") return isCreator ? "Buyer requested return" : "Ship return parcel";
+                    if (st === "return_shipped") return isCreator ? "Confirm return delivery" : "Return in transit";
+                    if (st === "disputed") return "Dispute under review";
+                    if (st === "released") return "Funds released";
+                    if (st === "refunded") return "Refunded";
+                    return "View details";
+                  };
+
                   return (
                     <tr key={deal.id} className="hover:bg-neutral-50/50 dark:hover:bg-neutral-900/50">
                       <td className="px-4 py-3 font-medium">
@@ -142,6 +159,11 @@ export default function Dashboard() {
                       </td>
                       <td className="px-4 py-3">
                         <StatusBadge status={deal.status} />
+                      </td>
+                      <td className="px-4 py-3 text-xs">
+                        <span className="font-medium text-accent">
+                          {getNextAction(deal.status)}
+                        </span>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <Link href={`/deal/${deal.code}`} className="btn-ghost text-xs py-1 px-2.5">

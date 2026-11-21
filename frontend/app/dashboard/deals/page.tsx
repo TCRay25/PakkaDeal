@@ -123,49 +123,72 @@ export default function DealsListPage() {
                 <th className="px-4 py-3">{t("counterparty")}</th>
                 <th className="px-4 py-3">{t("totalHeld")}</th>
                 <th className="px-4 py-3">{t("status")}</th>
+                <th className="px-4 py-3">What to do next</th>
                 <th className="px-4 py-3">{t("date")}</th>
                 <th className="px-4 py-3 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
-              {deals.map((deal) => (
-                <tr key={deal.id} className="hover:bg-neutral-50/50 dark:hover:bg-neutral-900/50">
-                  <td className="px-4 py-3 font-medium">
-                    <div className="font-semibold text-neutral-900 dark:text-neutral-100">{deal.product}</div>
-                    <div className="text-xs font-mono text-neutral-500">{deal.code}</div>
-                  </td>
-                  <td className="px-4 py-3 text-xs uppercase text-neutral-600 dark:text-neutral-400">
-                    {deal.deal_type}
-                  </td>
-                  <td className="px-4 py-3 text-xs">
-                    {deal.seller_id === user.id ? (
-                      <>
-                        <div className="font-medium">{deal.buyer_name}</div>
-                        <div className="text-neutral-500 font-mono">{deal.buyer_phone}</div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="font-medium">{deal.page_name || deal.seller_name || "Creator"}</div>
-                        <div className="text-neutral-500 font-mono">ID #{deal.seller_id}</div>
-                      </>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 font-mono font-semibold">
-                    {deal.total_amount.toLocaleString()} BDT
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={deal.status} />
-                  </td>
-                  <td className="px-4 py-3 text-xs text-neutral-500 whitespace-nowrap">
-                    {new Date(deal.created_at).toLocaleDateString()}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <Link href={`/deal/${deal.code}`} className="btn-ghost text-xs py-1 px-3">
-                      {t("open")}
-                    </Link>
-                  </td>
-                </tr>
-              ))}
+              {deals.map((deal) => {
+                const isCreator = deal.seller_id === user.id;
+
+                const getNextAction = (s: string) => {
+                  const st = s.toLowerCase();
+                  if (st === "created") return isCreator ? "Share link with buyer" : "Deposit into escrow";
+                  if (st === "payment_pending") return isCreator ? "Buyer viewed link, awaiting payment" : "Deposit into escrow vault";
+                  if (st === "held" || st === "escrow_held") return isCreator ? "Buyer paid! Ship parcel now" : "Escrow held, seller shipping";
+                  if (st === "shipped" || st === "in_transit") return isCreator ? "In transit to buyer" : "Track shipment arrival";
+                  if (st === "delivered") return isCreator ? "24h auto-release countdown active" : "Inspect item & confirm receipt";
+                  if (st === "return_requested") return isCreator ? "Buyer requested return" : "Ship return parcel";
+                  if (st === "return_shipped") return isCreator ? "Confirm return delivery" : "Return in transit";
+                  if (st === "disputed") return "Dispute under review";
+                  if (st === "released") return "Funds released";
+                  if (st === "refunded") return "Refunded";
+                  return "View details";
+                };
+
+                return (
+                  <tr key={deal.id} className="hover:bg-neutral-50/50 dark:hover:bg-neutral-900/50">
+                    <td className="px-4 py-3 font-medium">
+                      <div className="font-semibold text-neutral-900 dark:text-neutral-100">{deal.product}</div>
+                      <div className="text-xs font-mono text-neutral-500">{deal.code}</div>
+                    </td>
+                    <td className="px-4 py-3 text-xs uppercase text-neutral-600 dark:text-neutral-400">
+                      {deal.deal_type}
+                    </td>
+                    <td className="px-4 py-3 text-xs">
+                      {deal.seller_id === user.id ? (
+                        <>
+                          <div className="font-medium">{deal.buyer_name}</div>
+                          <div className="text-neutral-500 font-mono">{deal.buyer_phone}</div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="font-medium">{deal.page_name || deal.seller_name || "Creator"}</div>
+                          <div className="text-neutral-500 font-mono">ID #{deal.seller_id}</div>
+                        </>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 font-mono font-semibold">
+                      {deal.total_amount.toLocaleString()} BDT
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusBadge status={deal.status} />
+                    </td>
+                    <td className="px-4 py-3 text-xs font-medium text-accent">
+                      {getNextAction(deal.status)}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-neutral-500 whitespace-nowrap">
+                      {new Date(deal.created_at).toLocaleDateString()}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Link href={`/deal/${deal.code}`} className="btn-ghost text-xs py-1 px-3">
+                        {t("open")}
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

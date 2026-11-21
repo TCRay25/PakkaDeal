@@ -55,11 +55,15 @@ export type Deal = {
   return_charge: number;
   status:
     | "created"
+    | "payment_pending"
     | "held"
     | "shipped"
+    | "in_transit"
     | "delivered"
+    | "buyer_confirmed"
     | "return_requested"
     | "return_shipped"
+    | "return_received"
     | "disputed"
     | "released"
     | "refunded"
@@ -81,6 +85,13 @@ export type Deal = {
   payment_method?: string;
   payment_sender?: string;
   payment_trx_id?: string;
+  is_manual_courier?: number;
+  courier_phone?: string;
+  has_consignment_slip?: boolean;
+  manual_audit_status?: string;
+  auto_release_at?: string | null;
+  auto_release_paused?: number;
+  has_unboxing_photo?: boolean;
   created_at: string;
   updated_at: string;
   page_name?: string;
@@ -108,6 +119,9 @@ export type DealDetailResponse = {
   events: Array<{
     id: number;
     kind: string;
+    from_status?: string;
+    to_status?: string;
+    actor?: string;
     note: string;
     created_at: string;
   }>;

@@ -26,8 +26,8 @@ export default function AdminSidebar() {
   };
 
   return (
-    <aside className="w-full md:w-64 shrink-0 border-b md:border-b-0 md:border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black p-4 flex flex-col justify-between gap-6">
-      <div className="space-y-5">
+    <aside className="w-full md:w-64 shrink-0 border-b md:border-b-0 md:border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black p-4 flex flex-col justify-between gap-4 md:sticky md:top-20 md:self-start md:h-[calc(100vh-6.5rem)] overflow-hidden">
+      <div className="space-y-4">
         <div className="box p-3.5 bg-neutral-900 text-white dark:bg-neutral-950 border border-neutral-700 space-y-1.5">
           <div className="flex items-center justify-between">
             <span className="text-xs uppercase font-extrabold tracking-widest text-accent">

@@ -1,10 +1,17 @@
 "use client";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import Logo from "./Logo";
 import { useI18n } from "@/lib/i18n";
 
 export default function Footer() {
+  const pathname = usePathname();
   const { t } = useI18n();
+
+  // Do not render footer on any dashboard (customer, seller) or admin pages
+  if (pathname.startsWith("/dashboard") || pathname.startsWith("/admin")) {
+    return null;
+  }
 
   return (
     <footer className="border-t border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-black mt-20">

@@ -27,8 +27,8 @@ export default function AppSidebar() {
   const trustScore = user ? Math.max(user.seller_trust, user.buyer_trust, 70) : 70;
 
   return (
-    <aside className="w-full md:w-64 shrink-0 border-b md:border-b-0 md:border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black p-4 flex flex-col justify-between gap-6">
-      <div className="space-y-5">
+    <aside className="w-full md:w-64 shrink-0 border-b md:border-b-0 md:border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black p-4 flex flex-col justify-between gap-4 md:sticky md:top-20 md:self-start md:h-[calc(100vh-6.5rem)] overflow-hidden">
+      <div className="space-y-4">
         {user && (
           <div className="box p-3.5 bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 space-y-2">
             <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 pb-2">

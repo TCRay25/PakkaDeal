@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { q, one, isSqliteDb } from "../db.js";
 import { adminOnly, auth, fail } from "../http.js";
+import { adminForceRelease, adminForceRefund, adminSplitResolution } from "../services/settle.js";
+import { log } from "../services/events.js";
 
 const router = Router();
 router.use(auth, adminOnly);
@@ -72,7 +74,7 @@ router.get("/overview", async (_req, res) => {
 });
 
 router.get("/deals", async (req, res) => {
-  const { status, type, q: search } = req.query;
+  const { status, type, filter, q: search } = req.query;
   let query = `
     select d.*, u.page_name, u.name as seller_name, u.phone as seller_phone
     from deals d
@@ -81,14 +83,26 @@ router.get("/deals", async (req, res) => {
   `;
   const params = [];
 
-  if (status) {
+  if (status && status !== "all") {
     params.push(status);
     query += ` and d.status = $${params.length}`;
   }
-  if (type) {
+  if (type && type !== "all") {
     params.push(type);
     query += ` and d.deal_type = $${params.length}`;
   }
+
+  // Quick Filters
+  if (filter === "held") {
+    query += ` and d.status in ('held', 'shipped', 'delivered', 'in_transit')`;
+  } else if (filter === "countdown") {
+    query += ` and d.status = 'delivered' and d.auto_release_paused = 0`;
+  } else if (filter === "manual") {
+    query += ` and d.is_manual_courier = 1`;
+  } else if (filter === "disputed") {
+    query += ` and d.status = 'disputed'`;
+  }
+
   if (search) {
     params.push(`%${search}%`);
     query += ` and (d.product like $${params.length} or d.code like $${params.length} or d.buyer_phone like $${params.length} or u.phone like $${params.length})`;
@@ -96,7 +110,61 @@ router.get("/deals", async (req, res) => {
 
   query += ` order by d.id desc limit 150`;
   const rows = await q(query, params);
-  res.json(rows);
+
+  // Strip blobs
+  const cleanRows = rows.map(({ consignment_slip, unboxing_photo, ...d }) => ({
+    ...d,
+    has_consignment_slip: !!consignment_slip,
+    has_unboxing_photo: !!unboxing_photo,
+  }));
+
+  res.json(cleanRows);
+});
+
+router.post("/deals/:code/force-release", async (req, res) => {
+  const deal = await one("select * from deals where code=$1", [req.params.code]);
+  if (!deal) fail(404, "Deal not found");
+  const adminNotes = (req.body.admin_notes || "Force released by administrator").trim();
+  const updated = await adminForceRelease(deal, adminNotes, "admin");
+  res.json({ ok: true, deal: updated });
+});
+
+router.post("/deals/:code/force-refund", async (req, res) => {
+  const deal = await one("select * from deals where code=$1", [req.params.code]);
+  if (!deal) fail(404, "Deal not found");
+  const adminNotes = (req.body.admin_notes || "Force refunded to buyer by administrator").trim();
+  const updated = await adminForceRefund(deal, adminNotes, "admin");
+  res.json({ ok: true, deal: updated });
+});
+
+router.post("/deals/:code/split-resolution", async (req, res) => {
+  const deal = await one("select * from deals where code=$1", [req.params.code]);
+  if (!deal) fail(404, "Deal not found");
+  const sellerAmount = Math.max(0, Math.round(Number(req.body.seller_amount || 0)));
+  const buyerAmount = Math.max(0, Math.round(Number(req.body.buyer_amount || 0)));
+  const adminNotes = (req.body.admin_notes || "Split resolution by administrator").trim();
+
+  const updated = await adminSplitResolution(deal, sellerAmount, buyerAmount, adminNotes, "admin");
+  res.json({ ok: true, deal: updated });
+});
+
+router.post("/deals/:code/audit-courier", async (req, res) => {
+  const deal = await one("select * from deals where code=$1", [req.params.code]);
+  if (!deal) fail(404, "Deal not found");
+
+  const status = req.body.status; // 'approved' | 'rejected'
+  if (!["approved", "rejected"].includes(status)) {
+    fail(400, "Audit status must be 'approved' or 'rejected'");
+  }
+
+  await q("update deals set manual_audit_status=$2, updated_at=datetime('now') where id=$1", [deal.id, status]);
+  await log(deal.id, "courier_audit", `Manual courier slip marked ${status} by admin.`, {
+    fromStatus: deal.status,
+    toStatus: deal.status,
+    actor: "admin",
+  });
+
+  res.json({ ok: true, manual_audit_status: status });
 });
 
 router.get("/users", async (req, res) => {

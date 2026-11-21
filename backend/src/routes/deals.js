@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { randomBytes } from "node:crypto";
+import multer from "multer";
 import { config } from "../config.js";
 import { one, q } from "../db.js";
-import { auth, fail, optionalAuth, role } from "../http.js";
+import { auth, fail, optionalAuth } from "../http.js";
 import { PHONE } from "./auth.js";
-import { getBuyer, depositFor, successRatio } from "../services/trust.js";
+import { getBuyer, successRatio } from "../services/trust.js";
 import { scoreOrder } from "../services/risk.js";
 import { log, notify, notifySeller } from "../services/events.js";
 import {
@@ -13,12 +14,26 @@ import {
   applyCourier,
   releaseToSeller,
   applyHandoverConfirmation,
+  requestReturn,
+  shipReturn,
+  completeReturn,
   checkAllTimeouts,
   calculateFee,
   getSetting,
 } from "../services/settle.js";
 
 const router = Router();
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB limit
+  fileFilter: (_req, file, cb) => {
+    if (/^image\/(jpeg|png|webp|gif)$/.test(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("File must be an image under 5 MB (JPEG, PNG, WEBP)"));
+    }
+  },
+});
 
 export async function loadDeal(code) {
   const deal = await one("select * from deals where code=$1", [code]);
@@ -35,7 +50,7 @@ async function view(deal, user) {
   );
   const buyer = await getBuyer(deal.buyer_phone);
   const events = await q(
-    "select id, kind, note, created_at from deal_events where deal_id=$1 order by id asc",
+    "select id, kind, from_status, to_status, actor, note, created_at from deal_events where deal_id=$1 order by id asc",
     [deal.id]
   );
   const ledgerEntries = await q(
@@ -57,13 +72,20 @@ async function view(deal, user) {
     rocket: await getSetting("escrow_rocket_merchant", "01811-000000"),
     bankName: await getSetting("escrow_bank_name", "City Bank Ltd (Gulshan Branch)"),
     bankAccount: await getSetting("escrow_bank_account", "PakkaDeal Escrow Services Ltd (A/C: 150239482001)"),
-    instructions: await getSetting("escrow_payment_instructions", "বিকাশ বা নগদ অ্যাপের 'Make Payment' অপশন থেকে পাক্কাডিল অফিসিয়াল এসক্রো মার্চেন্ট নাম্বারে সম্পূর্ণ টাকা পেমেন্ট করুন। এরপর প্রাপ্ত Transaction ID (TrxID) এবং আপনার প্রেরক নম্বর নিচে বসিয়ে কনফার্ম করুন। টাকা সরাসরি পাক্কা ডিল এসক্রো ভল্টে সুরক্ষিত থাকবে।"),
+    instructions: await getSetting(
+      "escrow_payment_instructions",
+      "বিকাশ বা নগদ অ্যাপের 'Make Payment' অপশন থেকে পাক্কাডিল অফিসিয়াল এসক্রো মার্চেন্ট নাম্বারে সম্পূর্ণ টাকা পেমেন্ট করুন। এরপর প্রাপ্ত Transaction ID (TrxID) এবং আপনার প্রেরক নম্বর নিচে বসিয়ে কনফার্ম করুন। টাকা সরাসরি পাক্কা ডিল এসক্রো ভল্টে সুরক্ষিত থাকবে।"
+    ),
   };
 
-  const { buyer_phone, ...rest } = deal;
+  // Strip large raw buffers from JSON response
+  const { buyer_phone, consignment_slip, unboxing_photo, ...rest } = deal;
+
   return {
     deal: {
       ...rest,
+      has_consignment_slip: !!consignment_slip,
+      has_unboxing_photo: !!unboxing_photo,
       buyer_phone: isSeller || isBuyer || isAdminUser ? buyer_phone : mask(buyer_phone),
     },
     seller,
@@ -113,7 +135,15 @@ router.get("/", auth, async (req, res) => {
 
   query += ` order by d.id desc`;
   const rows = await q(query, params);
-  res.json(rows);
+
+  // Strip blobs
+  const cleanRows = rows.map(({ consignment_slip, unboxing_photo, ...d }) => ({
+    ...d,
+    has_consignment_slip: !!consignment_slip,
+    has_unboxing_photo: !!unboxing_photo,
+  }));
+
+  res.json(cleanRows);
 });
 
 router.post("/", auth, async (req, res) => {
@@ -182,7 +212,12 @@ router.post("/", auth, async (req, res) => {
     ]
   );
 
-  await log(deal.id, "created", `Deal created by ${req.user.page_name || req.user.name || "seller"}`);
+  await log(deal.id, "created", `Deal created by ${req.user.page_name || req.user.name || "seller"}`, {
+    fromStatus: "",
+    toStatus: "created",
+    actor: "seller",
+  });
+
   await notify(
     deal.buyer_phone,
     `PakkaDeal: ${req.user.page_name || req.user.name} invited you to deal #${deal.code} for "${deal.product}". Total: ${totalAmount} BDT. Pay into escrow to proceed.`,
@@ -195,14 +230,28 @@ router.post("/", auth, async (req, res) => {
 
 router.get("/:code", optionalAuth, async (req, res) => {
   await checkAllTimeouts();
-  const deal = await loadDeal(req.params.code);
+  let deal = await loadDeal(req.params.code);
+
+  // Transition from created -> payment_pending when designated buyer views the link
+  if (req.user && req.user.phone === deal.buyer_phone && deal.status === "created") {
+    await q("update deals set status='payment_pending', updated_at=datetime('now') where id=$1", [deal.id]);
+    await log(deal.id, "payment_pending", "Buyer opened deal link. Awaiting escrow payment.", {
+      fromStatus: "created",
+      toStatus: "payment_pending",
+      actor: "buyer",
+    });
+    deal = await loadDeal(req.params.code);
+  }
+
   res.json(await view(deal, req.user));
 });
 
 router.post("/:code/pay", auth, async (req, res) => {
   const deal = await loadDeal(req.params.code);
   if (req.user.phone !== deal.buyer_phone) fail(403, "Only the designated buyer can pay for this deal");
-  if (deal.status !== "created") fail(400, "Deal cannot be paid in status: " + deal.status);
+  if (!["created", "payment_pending"].includes(deal.status)) {
+    fail(400, "Deal cannot be paid in status: " + deal.status);
+  }
 
   const paymentMethod = (req.body.payment_method || "bKash").trim();
   const senderNumber = (req.body.sender_number || req.user.phone).trim();
@@ -216,25 +265,52 @@ router.post("/:code/pay", auth, async (req, res) => {
   res.json(await view(updated, req.user));
 });
 
-router.post("/:code/ship", auth, async (req, res) => {
+router.post("/:code/ship", auth, upload.single("consignment_slip"), async (req, res) => {
   const deal = await loadDeal(req.params.code);
   if (deal.seller_id !== req.user.id) fail(403, "Not your deal");
   if (deal.status !== "held") fail(400, "Deal is not in held status");
 
   const trackingId = (req.body.tracking_id || "").trim();
   const courierName = (req.body.courier_name || deal.courier_name || "Steadfast").trim();
-  if (trackingId.length < 3) fail(400, "Enter a valid courier tracking ID");
+  const courierPhone = (req.body.courier_phone || "").trim();
+  const isManualCourier = courierName.toLowerCase() === "other" || req.body.is_manual_courier === "1" || req.body.is_manual_courier === true;
 
-  const updated = await applyShip(deal, courierName, trackingId);
+  if (isManualCourier) {
+    if (!courierPhone) fail(400, "Please provide courier contact phone number for manual tracking");
+    if (!req.file) fail(400, "Please upload consignment slip photo for manual courier audit");
+  } else {
+    if (trackingId.length < 3) fail(400, "Enter a valid courier tracking ID");
+  }
+
+  const consignmentSlip = req.file?.buffer || null;
+  const consignmentSlipType = req.file?.mimetype || "";
+
+  const updated = await applyShip(deal, {
+    courierName,
+    trackingId: trackingId || `MANUAL-${Date.now().toString(36).toUpperCase()}`,
+    isManualCourier,
+    courierPhone,
+    consignmentSlip,
+    consignmentSlipType,
+  });
+
   res.json(await view(updated, req.user));
 });
 
-router.post("/:code/confirm", auth, async (req, res) => {
+router.post("/:code/confirm", auth, upload.single("unboxing_photo"), async (req, res) => {
   const deal = await loadDeal(req.params.code);
+
+  const unboxingPhoto = req.file?.buffer || null;
+  const unboxingPhotoType = req.file?.mimetype || "";
+
   if (deal.deal_type === "product") {
     if (req.user.phone !== deal.buyer_phone) fail(403, "Only the buyer can confirm product receipt");
     if (deal.status !== "delivered") fail(400, "Product must be marked delivered before confirmation");
-    const updated = await releaseToSeller(deal, "buyer_confirmed");
+
+    const updated = await releaseToSeller(deal, "buyer_confirmed", "buyer", {
+      unboxingPhoto,
+      unboxingPhotoType,
+    });
     res.json(await view(updated, req.user));
   } else {
     // Rental or service handover
@@ -250,13 +326,8 @@ router.post("/:code/request-return", auth, async (req, res) => {
   if (deal.return_policy === "no_returns") fail(400, "This deal has a no-return policy");
 
   const reason = (req.body.reason || "Buyer requested return").trim();
-  await q(
-    `update deals set status='return_requested', outcome='return_requested', updated_at=datetime('now') where id=$1`,
-    [deal.id]
-  );
-  await log(deal.id, "return_requested", `Buyer requested return: ${reason}`);
-  await notifySeller(deal.seller_id, `PakkaDeal #${deal.code}: Buyer requested return (${reason}). Please coordinate return shipping.`);
-  res.json(await view(await loadDeal(deal.code), req.user));
+  const updated = await requestReturn(deal, reason, "buyer");
+  res.json(await view(updated, req.user));
 });
 
 router.post("/:code/ship-return", auth, async (req, res) => {
@@ -268,20 +339,38 @@ router.post("/:code/ship-return", auth, async (req, res) => {
   const courierName = (req.body.return_courier_name || "Pathao").trim();
   if (trackingId.length < 3) fail(400, "Enter return tracking ID");
 
-  await q(
-    `update deals set status='return_shipped', return_courier_name=$2, return_tracking_id=$3, return_courier_status='in_transit', updated_at=datetime('now') where id=$1`,
-    [deal.id, courierName, trackingId]
-  );
-  await log(deal.id, "return_shipped", `Buyer dispatched return via ${courierName} (Tracking: ${trackingId})`);
-  await notifySeller(deal.seller_id, `PakkaDeal #${deal.code}: Return dispatched (${courierName} ${trackingId}). Inspect on arrival.`);
-  res.json(await view(await loadDeal(deal.code), req.user));
+  const updated = await shipReturn(deal, courierName, trackingId, "buyer");
+  res.json(await view(updated, req.user));
+});
+
+router.post("/:code/confirm-return", auth, async (req, res) => {
+  const deal = await loadDeal(req.params.code);
+  if (deal.seller_id !== req.user.id) fail(403, "Only the seller can confirm return receipt");
+  if (!["return_requested", "return_shipped"].includes(deal.status)) {
+    fail(400, "Return is not in transit or requested");
+  }
+
+  const updated = await completeReturn(deal, "seller");
+  res.json(await view(updated, req.user));
+});
+
+router.get("/:code/consignment-slip", async (req, res) => {
+  const deal = await one("select consignment_slip, consignment_slip_type from deals where code=$1", [req.params.code]);
+  if (!deal?.consignment_slip) fail(404, "No consignment slip found");
+  res.type(deal.consignment_slip_type || "image/jpeg").send(deal.consignment_slip);
+});
+
+router.get("/:code/unboxing-photo", async (req, res) => {
+  const deal = await one("select unboxing_photo, unboxing_photo_type from deals where code=$1", [req.params.code]);
+  if (!deal?.unboxing_photo) fail(404, "No unboxing photo found");
+  res.type(deal.unboxing_photo_type || "image/jpeg").send(deal.unboxing_photo);
 });
 
 /** Demo courier status simulation */
 router.post("/:code/simulate-courier", auth, async (req, res) => {
   const deal = await loadDeal(req.params.code);
-  const status = req.body.status; // 'picked_up', 'in_transit', 'delivered', 'refused'
-  if (!["picked_up", "in_transit", "delivered", "refused"].includes(status)) {
+  const status = req.body.status; // 'picked_up', 'in_transit', 'delivered', 'refused', 'returned'
+  if (!["picked_up", "in_transit", "delivered", "refused", "returned"].includes(status)) {
     fail(400, "Invalid courier simulation status");
   }
 
