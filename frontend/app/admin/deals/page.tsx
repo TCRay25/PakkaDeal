@@ -4,9 +4,11 @@ import Link from "next/link";
 import { api, post, Deal, API } from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
 import { useI18n } from "@/lib/i18n";
+import { useSocket } from "@/lib/socket";
 
 export default function AdminDealsPage() {
   const { t } = useI18n();
+  const { on } = useSocket();
   const [deals, setDeals] = useState<Deal[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("all");
@@ -42,6 +44,14 @@ export default function AdminDealsPage() {
   useEffect(() => {
     loadDeals();
   }, [statusFilter, typeFilter, quickFilter]);
+
+  // Real-time admin synchronization via Socket.IO
+  useEffect(() => {
+    const unsub = on("admin:deal_updated", () => {
+      loadDeals();
+    });
+    return unsub;
+  }, [on]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();

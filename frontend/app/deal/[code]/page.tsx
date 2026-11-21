@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { api, post, DealDetailResponse, API } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
+import { useSocket } from "@/lib/socket";
 import StatusBadge from "@/components/StatusBadge";
 import Timeline from "@/components/Timeline";
 import MoneyBreakdown from "@/components/MoneyBreakdown";
@@ -45,6 +46,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
   const code = resolvedParams.code;
   const { t, lang } = useI18n();
   const { user } = useAuth();
+  const { joinDeal, leaveDeal, on, isConnected } = useSocket();
   const router = useRouter();
 
   const [data, setData] = useState<DealDetailResponse | null>(null);
@@ -134,6 +136,33 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
   useEffect(() => {
     load();
   }, [code]);
+
+  // Real-time deal lifecycle synchronization via Socket.IO
+  useEffect(() => {
+    if (!code) return;
+    joinDeal(code);
+
+    const refreshDeal = (payload?: any) => {
+      if (!payload?.code || payload.code.toUpperCase() === code.toUpperCase()) {
+        api<DealDetailResponse>(`/deals/${code}`)
+          .then(setData)
+          .catch(() => {});
+      }
+    };
+
+    const unsubs = [
+      on("deal:status_changed", refreshDeal),
+      on("deal:event", refreshDeal),
+      on("deal:updated", refreshDeal),
+      on("dispute:opened", refreshDeal),
+      on("dispute:decided", refreshDeal),
+    ];
+
+    return () => {
+      leaveDeal(code);
+      unsubs.forEach((u) => u());
+    };
+  }, [code, joinDeal, leaveDeal, on]);
 
   const deal = data?.deal;
   const isDelivered = deal?.status === "delivered";

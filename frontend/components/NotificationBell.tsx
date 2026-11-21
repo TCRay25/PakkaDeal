@@ -4,9 +4,11 @@ import Link from "next/link";
 import { api, post, NotificationItem } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
+import { useSocket } from "@/lib/socket";
 
 export default function NotificationBell() {
   const { user } = useAuth();
+  const { on, isConnected } = useSocket();
   const { t, lang } = useI18n();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [open, setOpen] = useState(false);
@@ -21,9 +23,21 @@ export default function NotificationBell() {
 
   useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 15000);
+    const interval = setInterval(fetchNotifications, 20000);
     return () => clearInterval(interval);
   }, [user]);
+
+  // Real-time notification receiver via Socket.IO
+  useEffect(() => {
+    if (!user) return;
+    const unsubscribe = on("notification:new", (newNotif: NotificationItem) => {
+      setNotifications((prev) => {
+        if (prev.some((item) => item.id === newNotif.id)) return prev;
+        return [newNotif, ...prev];
+      });
+    });
+    return unsubscribe;
+  }, [user, on]);
 
   // Click outside to close
   useEffect(() => {

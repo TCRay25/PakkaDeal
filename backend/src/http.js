@@ -14,7 +14,7 @@ export function makeToken(userId) {
   return `${body}.${sign(body)}`;
 }
 
-function readToken(token) {
+export function readToken(token) {
   try {
     const [body, sig] = token.split(".");
     const good = sign(body);
@@ -24,10 +24,15 @@ function readToken(token) {
   } catch { return null; }
 }
 
+export async function verifyUserToken(token) {
+  const clean = String(token || "").replace(/^Bearer\s+/i, "").trim();
+  const uid = clean ? readToken(clean) : null;
+  return uid ? one("select * from users where id=$1", [uid]) : null;
+}
+
 async function loadUser(req) {
   const token = (req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
-  const uid = token ? readToken(token) : null;
-  return uid ? one("select * from users where id=$1", [uid]) : null;
+  return verifyUserToken(token);
 }
 
 export const isAdmin = (user) => !!user && config.adminPhones.includes(user.phone);

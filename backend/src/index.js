@@ -1,8 +1,10 @@
 import express from "express";
+import http from "node:http";
 import cors from "cors";
 import { config } from "./config.js";
 import { initDb } from "./db.js";
 import { startCronJobs } from "./services/cron.js";
+import { initSocket } from "./services/socket.js";
 import { HttpError } from "./http.js";
 import authRoutes from "./routes/auth.js";
 import dealRoutes from "./routes/deals.js";
@@ -14,6 +16,8 @@ import notificationRoutes from "./routes/notifications.js";
 import shipmentRoutes from "./routes/shipments.js";
 
 const app = express();
+const server = http.createServer(app);
+initSocket(server);
 
 app.use(cors({
   origin: (origin, callback) => {
@@ -72,6 +76,6 @@ app.use((err, _req, res, _next) => {
 await initDb();
 startCronJobs();
 
-app.listen(config.port, () => {
+server.listen(config.port, () => {
   console.log(`PakkaDeal Escrow API running on port :${config.port}`);
 });

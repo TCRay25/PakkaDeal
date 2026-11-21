@@ -7,6 +7,7 @@ import { analyze } from "../services/disputeAi.js";
 import { addLedger } from "../services/settle.js";
 import { bumpBuyer, bumpSeller } from "../services/trust.js";
 import { log, notify, notifySeller } from "../services/events.js";
+import { emitToAdmin, emitToDeal } from "../services/socket.js";
 
 const router = Router();
 const upload = multer({
@@ -65,6 +66,18 @@ router.post("/deals/:code/dispute", auth, upload.single("photo"), async (req, re
 
   await q(`update deals set status='disputed', outcome='disputed', updated_at=CURRENT_TIMESTAMP where id=$1`, [deal.id]);
   await log(deal.id, "disputed", `Dispute opened by ${isBuyer ? "Buyer" : "Seller"}: ${reason}`);
+  emitToAdmin("admin:dispute_opened", {
+    disputeId: dispute.id,
+    dealCode: deal.code,
+    reason,
+    category: ai.category,
+    created_at: new Date().toISOString(),
+  });
+  emitToDeal(deal.code, "dispute:opened", {
+    disputeId: dispute.id,
+    dealCode: deal.code,
+    reason,
+  });
   await notify(
     deal.buyer_phone,
     `PakkaDeal #${deal.code}: Dispute submitted for admin review. Escrow funds remain frozen.`,
@@ -162,6 +175,17 @@ router.post("/disputes/:id/decide", auth, adminOnly, async (req, res) => {
     `update disputes set status=$2, admin_notes=$3 where id=$1`,
     [d.id, isUpheld ? "upheld" : "rejected", adminNotes]
   );
+
+  emitToAdmin("admin:dispute_decided", {
+    disputeId: d.id,
+    dealCode: deal.code,
+    decision,
+  });
+  emitToDeal(deal.code, "dispute:decided", {
+    disputeId: d.id,
+    dealCode: deal.code,
+    decision,
+  });
 
   res.json({ ok: true, status: isUpheld ? "upheld" : "rejected" });
 });

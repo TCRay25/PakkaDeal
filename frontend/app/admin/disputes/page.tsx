@@ -3,9 +3,11 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, post, Dispute, API } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import { useSocket } from "@/lib/socket";
 
 export default function AdminDisputesPage() {
   const { t } = useI18n();
+  const { on } = useSocket();
   const [disputes, setDisputes] = useState<Dispute[]>([]);
   const [loading, setLoading] = useState(true);
   const [adminNotes, setAdminNotes] = useState<Record<number, string>>({});
@@ -22,6 +24,15 @@ export default function AdminDisputesPage() {
   useEffect(() => {
     loadDisputes();
   }, []);
+
+  // Real-time dispute queue synchronization via Socket.IO
+  useEffect(() => {
+    const unsubs = [
+      on("admin:dispute_opened", () => loadDisputes()),
+      on("admin:dispute_decided", () => loadDisputes()),
+    ];
+    return () => unsubs.forEach((u) => u());
+  }, [on]);
 
   const handleDecision = async (id: number, decision: "upheld" | "rejected") => {
     if (!confirm(`Are you sure you want to mark this dispute as ${decision.toUpperCase()}?`)) return;
