@@ -33,6 +33,27 @@ export async function getSetting(key, fallback) {
   return row ? row.value : fallback;
 }
 
+export async function getPublicSettings() {
+  const rows = await q("select key, value from settings");
+  const map = {
+    platform_fee_percent: String(config.feePercent || 2),
+    platform_fee_min: String(config.feeMin || 10),
+    confirm_window_hours: String(config.confirmWithinHours || 72),
+    ship_within_hours: String(config.shipWithinHours || 48),
+    return_deduct_shipping: "true",
+    escrow_bkash_merchant: "01711-000000",
+    escrow_nagad_merchant: "01911-000000",
+    escrow_rocket_merchant: "01811-000000",
+    escrow_bank_name: "City Bank Ltd (Gulshan Branch)",
+    escrow_bank_account: "PakkaDeal Escrow Services Ltd (A/C: 150239482001)",
+    escrow_payment_instructions: "বিকাশ বা নগদ অ্যাপের 'Make Payment' অপশন থেকে পাক্কাডিল অফিসিয়াল এসক্রো মার্চেন্ট নাম্বারে সম্পূর্ণ টাকা পেমেন্ট করুন। এরপর প্রাপ্ত Transaction ID (TrxID) এবং আপনার প্রেরক নম্বর নিচে বসিয়ে কনফার্ম করুন। টাকা সরাসরি পাক্কা ডিল এসক্রো ভল্টে সুরক্ষিত থাকবে।",
+  };
+  for (const r of rows || []) {
+    map[r.key] = r.value;
+  }
+  return map;
+}
+
 export async function calculateFee(amount) {
   const feePercent = Number(await getSetting("platform_fee_percent", config.feePercent));
   const feeMin = Number(await getSetting("platform_fee_min", config.feeMin));
@@ -212,8 +233,8 @@ export async function applyCourier(deal, status) {
   }
 
   if (status === "delivered") {
-    // 24-hour auto-release window starts on delivery
-    const autoReleaseHours = 24;
+    // Inspection window starts on delivery
+    const autoReleaseHours = Number(await getSetting("confirm_window_hours", config.confirmWithinHours || 72));
     const autoReleaseAt = new Date(Date.now() + autoReleaseHours * 36e5).toISOString();
 
     await q(
@@ -231,7 +252,7 @@ export async function applyCourier(deal, status) {
     await log(
       deal.id,
       "delivered",
-      `Courier marked parcel delivered. 24-hour auto-release countdown started. Buyer has 24 hours to inspect item and confirm receipt.`,
+      `Courier marked parcel delivered. ${autoReleaseHours}-hour auto-release countdown started. Buyer has ${autoReleaseHours} hours to inspect item and confirm receipt.`,
       {
         fromStatus: deal.status,
         toStatus: "delivered",
@@ -326,7 +347,7 @@ export async function releaseToSeller(deal, outcome = "buyer_confirmed", actor =
   assertTransition(deal.status, "released", actor);
 
   const payout = deal.seller_payout || (deal.total_amount - deal.fee_amount);
-  const fee = deal.fee_amount || Math.max(10, Math.round(deal.total_amount * 0.02));
+  const fee = deal.fee_amount || (await calculateFee(deal.total_amount));
 
   const unboxingPhoto = proofOpts.unboxingPhoto || null;
   const unboxingPhotoType = proofOpts.unboxingPhotoType || "";
@@ -573,7 +594,7 @@ export async function applyHandoverConfirmation(deal, user) {
 /** Admin Force Release */
 export async function adminForceRelease(deal, adminNotes = "", actor = "admin") {
   const payout = deal.seller_payout || (deal.total_amount - deal.fee_amount);
-  const fee = deal.fee_amount || Math.max(10, Math.round(deal.total_amount * 0.02));
+  const fee = deal.fee_amount || (await calculateFee(deal.total_amount));
 
   await q(
     `update deals set status='released', outcome='admin_forced_release', auto_release_paused=1, updated_at=CURRENT_TIMESTAMP where id=$1`,

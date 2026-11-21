@@ -1,9 +1,13 @@
 "use client";
 import Link from "next/link";
 import { useI18n } from "@/lib/i18n";
+import { useSettings, toBengaliDigits } from "@/lib/settings";
 
 export default function HowItWorksPage() {
   const { t, lang } = useI18n();
+  const { feePercent, shipHours, confirmHours } = useSettings();
+
+  const confirmDays = Math.max(1, Math.round(confirmHours / 24));
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-12 space-y-12">
@@ -25,20 +29,20 @@ export default function HowItWorksPage() {
               <strong>সময়রেখা ও প্রক্রিয়া:</strong>
               <p>১. বিক্রেতা পণ্যের মূল্য ও কুরিয়ারের নাম উল্লেখ করে ডিল তৈরি করেন।</p>
               <p>২. ক্রেতা পুরো টাকা (পণ্য + ডেলিভারি চার্জ) এসক্রো ভল্টে জমা দেন।</p>
-              <p>৩. বিক্রেতা ৪৮ ঘণ্টার মধ্যে পার্সেল বুক করে ট্র্যাকিং আইডি প্রদান করেন।</p>
+              <p>৩. বিক্রেতা {toBengaliDigits(shipHours)} ঘণ্টার মধ্যে পার্সেল বুক করে ট্র্যাকিং আইডি প্রদান করেন।</p>
               <p>৪. স্বয়ংক্রিয় কুরিয়ার ট্র্যাকিং পার্সেল গ্রহণ, পরিবহন ও ডেলিভারি ট্র্যাক করে।</p>
-              <p>৫. ডেলিভারির পর ক্রেতার পণ্য যাচাই ও সন্তুষ্টি নিশ্চিতের জন্য ৩ দিন সময় থাকে।</p>
-              <p>৬. ক্রেতা নিশ্চিত করলে বা কোনো অভিযোগ না থাকলে ২% সার্ভিস ফি কেটে বিক্রেতাকে পাওনা পরিশোধ করা হয়।</p>
+              <p>৫. ডেলিভারির পর ক্রেতার পণ্য যাচাই ও সন্তুষ্টি নিশ্চিতের জন্য {toBengaliDigits(confirmDays)} দিন ({toBengaliDigits(confirmHours)} ঘণ্টা) সময় থাকে।</p>
+              <p>৬. ক্রেতা নিশ্চিত করলে বা কোনো অভিযোগ না থাকলে {toBengaliDigits(feePercent)}% সার্ভিস ফি কেটে বিক্রেতাকে পাওনা পরিশোধ করা হয়।</p>
             </div>
           ) : (
             <div className="border border-neutral-200 dark:border-neutral-800 p-4 bg-neutral-50 dark:bg-neutral-900 text-xs space-y-2">
               <strong>Timeline Breakdown:</strong>
               <p>1. Seller initiates deal with price and courier name (Steadfast, Pathao, RedX).</p>
               <p>2. Buyer deposits full amount into escrow (bKash/Nagad mock gateway).</p>
-              <p>3. Seller dispatches within 48 hours and inputs consignment tracking ID.</p>
+              <p>3. Seller dispatches within {shipHours} hours and inputs consignment tracking ID.</p>
               <p>4. Automated courier status checks detect pickup, transit, and delivery events.</p>
-              <p>5. On delivery, a 72-hour inspection window opens for buyer verification.</p>
-              <p>6. If confirmed or if window passes without dispute, funds are released to seller minus 2% fee.</p>
+              <p>5. On delivery, a {confirmHours}-hour inspection window opens for buyer verification.</p>
+              <p>6. If confirmed or if window passes without dispute, funds are released to seller minus {feePercent}% fee.</p>
             </div>
           )}
         </section>

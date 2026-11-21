@@ -4,10 +4,12 @@ import { useRouter } from "next/navigation";
 import { post } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
+import { useSettings } from "@/lib/settings";
 
 export default function CreateDealPage() {
   const { t } = useI18n();
   const { user } = useAuth();
+  const { calculateFee } = useSettings();
   const router = useRouter();
 
   const [dealType, setDealType] = useState<"product" | "rental" | "service">("product");
@@ -28,7 +30,7 @@ export default function CreateDealPage() {
 
   const charge = dealType === "product" ? Number(deliveryCharge) || 0 : 0;
   const totalAmount = Number(price || 0) + charge;
-  const feeAmount = Math.max(10, Math.round(totalAmount * 0.02));
+  const feeAmount = calculateFee(totalAmount);
   const sellerPayout = Math.max(0, totalAmount - feeAmount);
 
   async function handleSubmit(e: React.FormEvent) {

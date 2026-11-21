@@ -1,9 +1,11 @@
 "use client";
 import Link from "next/link";
 import { useI18n } from "@/lib/i18n";
+import { useSettings, toBengaliDigits } from "@/lib/settings";
 
 export default function FeesPage() {
   const { t, lang } = useI18n();
+  const { feePercent, feeMin } = useSettings();
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-12 space-y-10">
@@ -16,8 +18,12 @@ export default function FeesPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="box p-6 space-y-3">
           <span className="text-xs font-bold uppercase tracking-wider text-accent">{lang === "bn" ? "স্ট্যান্ডার্ড এসক্রো" : "Standard Escrow"}</span>
-          <div className="text-4xl font-extrabold text-neutral-900 dark:text-neutral-100">2%</div>
-          <p className="text-xs text-neutral-500">{lang === "bn" ? "সর্বনিম্ন ফি: প্রতি লেনদেনে ১০ টাকা" : "Minimum fee: 10 BDT per transaction"}</p>
+          <div className="text-4xl font-extrabold text-neutral-900 dark:text-neutral-100">{feePercent}%</div>
+          <p className="text-xs text-neutral-500">
+            {lang === "bn"
+              ? `সর্বনিম্ন ফি: প্রতি লেনদেনে ${toBengaliDigits(feeMin)} টাকা`
+              : `Minimum fee: ${feeMin} BDT per transaction`}
+          </p>
           <ul className="text-sm space-y-2 text-neutral-600 dark:text-neutral-400 pt-3 border-t border-neutral-200 dark:border-neutral-800">
             <li>{lang === "bn" ? "✓ শুধুমাত্র সফলভাবে কাজ শেষ হলে কর্তন করা হয়" : "✓ Deducted only on successful completion"}</li>
             <li>{lang === "bn" ? "✓ ক্রেতাদের জন্য সম্পূর্ণ ফ্রি (টাকা জমার সময় কোনো ফি নেই)" : "✓ Free for buyers (no added fee on deposit)"}</li>

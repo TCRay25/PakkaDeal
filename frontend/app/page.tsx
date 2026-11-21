@@ -2,14 +2,16 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useI18n } from "@/lib/i18n";
+import { useSettings } from "@/lib/settings";
 import Logo from "@/components/Logo";
 import AnimatedHeroLogo from "@/components/AnimatedHeroLogo";
 import Footer from "@/components/Footer";
 
 export default function Home() {
   const { t } = useI18n();
+  const { calculateFee } = useSettings();
   const [calcAmount, setCalcAmount] = useState<number>(5000);
-  const fee = Math.max(10, Math.round(calcAmount * 0.02));
+  const fee = calculateFee(calcAmount);
   const sellerReceives = Math.max(0, calcAmount - fee);
 
   return (

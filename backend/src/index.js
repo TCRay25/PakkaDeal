@@ -14,6 +14,7 @@ import profileRoutes from "./routes/profiles.js";
 import adminRoutes from "./routes/admin.js";
 import notificationRoutes from "./routes/notifications.js";
 import shipmentRoutes from "./routes/shipments.js";
+import settingsRoutes from "./routes/settings.js";
 
 const app = express();
 const server = http.createServer(app);
@@ -61,6 +62,9 @@ app.use("/api/admin", adminRoutes);
 
 app.use("/notifications", notificationRoutes);
 app.use("/api/notifications", notificationRoutes);
+
+app.use("/settings", settingsRoutes);
+app.use("/api/settings", settingsRoutes);
 
 app.use("/", disputeRoutes);
 app.use("/api", disputeRoutes);

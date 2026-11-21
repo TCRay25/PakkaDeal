@@ -4,7 +4,7 @@ import { one, q } from "../db.js";
 import { adminOnly, auth, fail } from "../http.js";
 import { loadDeal } from "./deals.js";
 import { analyze } from "../services/disputeAi.js";
-import { addLedger } from "../services/settle.js";
+import { addLedger, calculateFee } from "../services/settle.js";
 import { bumpBuyer, bumpSeller } from "../services/trust.js";
 import { log, notify, notifySeller } from "../services/events.js";
 import { emitToAdmin, emitToDeal } from "../services/socket.js";
@@ -150,7 +150,7 @@ router.post("/disputes/:id/decide", auth, adminOnly, async (req, res) => {
   } else {
     // Rejected: seller receives payout minus fee
     const payout = deal.seller_payout || (deal.total_amount - deal.fee_amount);
-    const fee = deal.fee_amount || Math.max(10, Math.round(deal.total_amount * 0.02));
+    const fee = deal.fee_amount || (await calculateFee(deal.total_amount));
 
     await q(`update deals set status='released', outcome='dispute_rejected', updated_at=CURRENT_TIMESTAMP where id=$1`, [deal.id]);
     await addLedger({

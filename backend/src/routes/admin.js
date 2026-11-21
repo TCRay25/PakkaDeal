@@ -2,8 +2,9 @@ import { Router } from "express";
 import { q, one, isSqliteDb } from "../db.js";
 import { adminOnly, auth, fail, isAdmin } from "../http.js";
 import { config } from "../config.js";
-import { adminForceRelease, adminForceRefund, adminSplitResolution } from "../services/settle.js";
+import { adminForceRelease, adminForceRefund, adminSplitResolution, getPublicSettings } from "../services/settle.js";
 import { log } from "../services/events.js";
+import { emitGlobal } from "../services/socket.js";
 
 const router = Router();
 router.use(auth, adminOnly);
@@ -317,6 +318,8 @@ router.patch("/settings", async (req, res) => {
   }
 
   const rows = await q("select key, value, description from settings order by key");
+  const publicSettings = await getPublicSettings();
+  emitGlobal("settings:updated", publicSettings);
   res.json({ ok: true, settings: rows });
 });
 

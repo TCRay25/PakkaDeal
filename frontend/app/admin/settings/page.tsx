@@ -2,9 +2,11 @@
 import { useEffect, useState } from "react";
 import { api, patch, SettingItem } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
+import { useSettings } from "@/lib/settings";
 
 export default function AdminSettingsPage() {
   const { t, lang } = useI18n();
+  const { refreshSettings } = useSettings();
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(false);
@@ -32,6 +34,7 @@ export default function AdminSettingsPage() {
     setErr("");
     try {
       await patch("/admin/settings", settings);
+      await refreshSettings();
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (x: any) {
