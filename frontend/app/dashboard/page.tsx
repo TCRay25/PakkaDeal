@@ -5,6 +5,7 @@ import { api, Deal, NotificationItem } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 import StatusBadge from "@/components/StatusBadge";
+import { translateNotification } from "@/lib/translateNotification";
 
 export default function Dashboard() {
   const { t, lang } = useI18n();
@@ -118,13 +119,13 @@ export default function Dashboard() {
             <table className="w-full text-left text-sm">
               <thead className="bg-neutral-50 dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 text-xs uppercase font-semibold text-neutral-500">
                 <tr>
-                  <th className="px-4 py-3">Code / Title</th>
-                  <th className="px-4 py-3">Type</th>
-                  <th className="px-4 py-3">Counterparty</th>
-                  <th className="px-4 py-3">Total Escrow</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">What to do next</th>
-                  <th className="px-4 py-3 text-right">Action</th>
+                  <th className="px-4 py-3">{lang === "bn" ? "কোড / শিরোনাম" : "Code / Title"}</th>
+                  <th className="px-4 py-3">{lang === "bn" ? "ধরন" : "Type"}</th>
+                  <th className="px-4 py-3">{lang === "bn" ? "অপর পক্ষ" : "Counterparty"}</th>
+                  <th className="px-4 py-3">{lang === "bn" ? "মোট এসক্রো" : "Total Escrow"}</th>
+                  <th className="px-4 py-3">{lang === "bn" ? "স্ট্যাটাস" : "Status"}</th>
+                  <th className="px-4 py-3">{lang === "bn" ? "পরবর্তী করণীয়" : "What to do next"}</th>
+                  <th className="px-4 py-3 text-right">{lang === "bn" ? "অ্যাকশন" : "Action"}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
@@ -215,25 +216,30 @@ export default function Dashboard() {
       {notifications.length > 0 && (
         <section className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-base font-bold tracking-tight">Recent Activity Alerts</h2>
+            <h2 className="text-base font-bold tracking-tight">
+              {t("recentActivityAlerts")}
+            </h2>
             <Link href="/dashboard/notifications" className="text-xs text-accent font-semibold hover:underline">
-              All Notifications →
+              {t("allNotifications")} →
             </Link>
           </div>
           <div className="space-y-2">
-            {notifications.slice(0, 3).map((notif) => (
-              <div key={notif.id} className="box p-3 border border-neutral-200 dark:border-neutral-800 text-xs flex justify-between items-center">
-                <div>
-                  <strong className="block text-neutral-800 dark:text-neutral-200 font-semibold">{notif.title}</strong>
-                  <span className="text-neutral-600 dark:text-neutral-400">{notif.message}</span>
+            {notifications.slice(0, 3).map((notif) => {
+              const { title, message } = translateNotification(notif.title, notif.message, lang);
+              return (
+                <div key={notif.id} className="box p-3 border border-neutral-200 dark:border-neutral-800 text-xs flex justify-between items-center">
+                  <div>
+                    <strong className="block text-neutral-800 dark:text-neutral-200 font-semibold">{title}</strong>
+                    <span className="text-neutral-600 dark:text-neutral-400">{message}</span>
+                  </div>
+                  {notif.deal_code && (
+                    <Link href={`/deal/${notif.deal_code}`} className="btn-ghost text-xs py-0.5 px-2 shrink-0 ml-3">
+                      {t("view")}
+                    </Link>
+                  )}
                 </div>
-                {notif.deal_code && (
-                  <Link href={`/deal/${notif.deal_code}`} className="btn-ghost text-xs py-0.5 px-2 shrink-0 ml-3">
-                    View
-                  </Link>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}

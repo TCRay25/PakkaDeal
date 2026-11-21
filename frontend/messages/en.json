@@ -387,5 +387,8 @@
   "footerCopyright": "© 2026 PakkaDeal Bangladesh. Built with deterministic code and trust rules.",
   "footerEscrowFee": "2% Escrow Fee",
   "footerCouriers": "Steadfast & Pathao Compatible",
-  "footerSandbox": "bKash Sandbox"
+  "footerSandbox": "bKash Sandbox",
+  "recentActivityAlerts": "Recent Activity Alerts",
+  "allNotifications": "All Notifications",
+  "view": "View"
 }

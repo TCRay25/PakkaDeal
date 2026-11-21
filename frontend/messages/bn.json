@@ -387,5 +387,8 @@
   "footerCopyright": "© ২০২৬ পাক্কাডিল বাংলাদেশ। সুরক্ষিত কোড এবং বিশ্বাসযোগ্য নিয়মে পরিচালিত।",
   "footerEscrowFee": "২% এসক্রো ফি",
   "footerCouriers": "স্টিডফাস্ট ও পাঠাও কমপ্যাটিবল",
-  "footerSandbox": "বিকাশ স্যান্ডবক্স"
+  "footerSandbox": "বিকাশ স্যান্ডবক্স",
+  "recentActivityAlerts": "সাম্প্রতিক অ্যাক্টিভিটি অ্যালার্ট",
+  "allNotifications": "সকল নোটিফিকেশন",
+  "view": "দেখুন"
 }

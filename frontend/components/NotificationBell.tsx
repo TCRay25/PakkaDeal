@@ -5,6 +5,7 @@ import { api, post, NotificationItem } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/lib/i18n";
 import { useSocket } from "@/lib/socket";
+import { translateNotification } from "@/lib/translateNotification";
 
 export default function NotificationBell() {
   const { user } = useAuth();
@@ -132,6 +133,7 @@ export default function NotificationBell() {
               </p>
             ) : (
               notifications.map((n) => {
+                const { title, message } = translateNotification(n.title, n.message, lang);
                 const dateStr = new Date(n.created_at).toLocaleString(lang === "bn" ? "bn-BD" : "en-GB", {
                   month: "short",
                   day: "2-digit",
@@ -150,14 +152,14 @@ export default function NotificationBell() {
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-bold text-neutral-900 dark:text-neutral-100">
-                        {n.title}
+                        {title}
                       </span>
                       <span className="text-[10px] text-neutral-400 font-mono shrink-0">
                         {dateStr}
                       </span>
                     </div>
                     <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-1 line-clamp-2">
-                      {n.message}
+                      {message}
                     </p>
                     {n.deal_code && (
                       <span className="inline-block font-mono text-[10px] text-accent font-semibold mt-1">

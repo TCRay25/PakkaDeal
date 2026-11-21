@@ -165,9 +165,9 @@ export default function DealsListPage() {
                 <th className="px-4 py-3">{t("counterparty")}</th>
                 <th className="px-4 py-3">{t("totalHeld")}</th>
                 <th className="px-4 py-3">{t("status")}</th>
-                <th className="px-4 py-3">What to do next</th>
+                <th className="px-4 py-3">{lang === "bn" ? "পরবর্তী করণীয়" : "What to do next"}</th>
                 <th className="px-4 py-3">{t("date")}</th>
-                <th className="px-4 py-3 text-right">Action</th>
+                <th className="px-4 py-3 text-right">{lang === "bn" ? "অ্যাকশন" : "Action"}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
