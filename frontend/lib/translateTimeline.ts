@@ -234,6 +234,35 @@ export function translateLedgerNote(note: string, lang: Lang): string {
     return `#${mAdminRef[1]} ডিলের প্রশাসনিক রিফান্ড। কারণ: ${mAdminRef[2]}`;
   }
 
+  // Pattern: Admin resolved dispute #[ID] in favor of buyer. Refund to buyer.
+  const mDispBuyer = n.match(/^Admin resolved dispute\s*#?([A-Za-z0-9_-]+)\s*in favor of buyer\.\s*Refund to buyer\./i);
+  if (mDispBuyer) {
+    return `#${mDispBuyer[1]} বিরোধে ক্রেতার পক্ষে সিদ্ধান্ত। ক্রেতাকে রিফান্ড প্রদান।`;
+  }
+
+  // Pattern: Admin rejected dispute #[ID]. Funds released to seller. Notes: [Notes]
+  const mDispSeller = n.match(/^Admin rejected dispute\s*#?([A-Za-z0-9_-]+)\.\s*Funds released to seller\.\s*Notes:\s*(.+)/i);
+  if (mDispSeller) {
+    return `#${mDispSeller[1]} বিরোধ খারিজ করা হয়েছে। তহবিল বিক্রেতাকে হস্তান্তর। নোট: ${mDispSeller[2]}`;
+  }
+
+  // Pattern: Split settlement: Seller payout for #[Code]
+  const mSplitSeller = n.match(/^Split settlement:\s*Seller payout for\s*#?([A-Za-z0-9_-]+)/i);
+  if (mSplitSeller) {
+    return `#${mSplitSeller[1]} ডিলের সমঝোতা: বিক্রেতার পে-আউট`;
+  }
+
+  // Pattern: Split settlement: Buyer refund for #[Code]
+  const mSplitBuyer = n.match(/^Split settlement:\s*Buyer refund for\s*#?([A-Za-z0-9_-]+)/i);
+  if (mSplitBuyer) {
+    return `#${mSplitBuyer[1]} ডিলের সমঝোতা: ক্রেতার রিফান্ড`;
+  }
+
+  // Pattern: Refund to buyer: Seller failed to ship within deadline
+  if (/^Refund to buyer:\s*Seller failed to ship within deadline/i.test(n)) {
+    return "নির্ধারিত সময়ে পণ্য না পাঠানোয় ক্রেতাকে সম্পূর্ণ রিফান্ড প্রদান।";
+  }
+
   return note;
 }
 

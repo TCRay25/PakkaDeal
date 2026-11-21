@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api, LedgerItem } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
+import { translateLedgerType, translateLedgerNote } from "@/lib/translateTimeline";
 
 type WalletData = {
   total_earnings: number;
@@ -12,7 +13,7 @@ type WalletData = {
 };
 
 export default function WalletPage() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { user } = useAuth();
   const [data, setData] = useState<WalletData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -40,7 +41,7 @@ export default function WalletPage() {
         <div className="box p-5 border border-neutral-200 dark:border-neutral-800 space-y-1">
           <span className="text-xs uppercase font-bold text-neutral-500">{t("totalEarnings")}</span>
           <div className="text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
-            {Number(data?.total_earnings || 0).toLocaleString()} BDT
+            {Number(data?.total_earnings || 0).toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
           </div>
           <span className="text-xs text-neutral-400">{t("releasedSellerPayouts")}</span>
         </div>
@@ -48,7 +49,7 @@ export default function WalletPage() {
         <div className="box p-5 border border-neutral-200 dark:border-neutral-800 space-y-1">
           <span className="text-xs uppercase font-bold text-neutral-500">{t("totalEscrowDeposited")}</span>
           <div className="text-2xl font-bold font-mono text-accent">
-            {Number(data?.total_escrow_deposited || 0).toLocaleString()} BDT
+            {Number(data?.total_escrow_deposited || 0).toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
           </div>
           <span className="text-xs text-neutral-400">{t("fundsDepositedEscrow")}</span>
         </div>
@@ -56,7 +57,7 @@ export default function WalletPage() {
         <div className="box p-5 border border-neutral-200 dark:border-neutral-800 space-y-1">
           <span className="text-xs uppercase font-bold text-neutral-500">{t("totalRefundsReceived")}</span>
           <div className="text-2xl font-bold font-mono text-neutral-900 dark:text-neutral-100">
-            {Number(data?.total_refunds_received || 0).toLocaleString()} BDT
+            {Number(data?.total_refunds_received || 0).toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
           </div>
           <span className="text-xs text-neutral-400">{t("returnedRefunds")}</span>
         </div>
@@ -97,11 +98,11 @@ export default function WalletPage() {
                           ? "border-amber-500 text-amber-500 bg-amber-500/5"
                           : "border-neutral-300 text-neutral-600"
                       }`}>
-                        {tx.transaction_type}
+                        {translateLedgerType(tx.transaction_type, lang)}
                       </span>
                     </td>
                     <td className="px-4 py-3 font-mono font-bold">
-                      {tx.amount.toLocaleString()} BDT
+                      {tx.amount.toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
                     </td>
                     <td className="px-4 py-3 text-xs">
                       {tx.deal_code ? (
@@ -113,10 +114,10 @@ export default function WalletPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-xs text-neutral-600 dark:text-neutral-400">
-                      {tx.notes}
+                      {translateLedgerNote(tx.notes, lang)}
                     </td>
                     <td className="px-4 py-3 text-xs text-neutral-500 whitespace-nowrap">
-                      {new Date(tx.created_at).toLocaleString()}
+                      {new Date(tx.created_at).toLocaleString(lang === "bn" ? "bn-BD" : "en-GB")}
                     </td>
                   </tr>
                 ))}
