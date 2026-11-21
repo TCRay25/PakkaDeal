@@ -63,7 +63,7 @@ export default function Header() {
 
         <div className="flex items-center gap-2">
           {!user ? (
-            <div className="flex items-center gap-1.5">
+            <div className="hidden sm:flex items-center gap-1.5">
               <Link href="/login" className="btn-ghost text-xs py-1.5 px-3">
                 {t("login")}
               </Link>
@@ -73,7 +73,7 @@ export default function Header() {
             </div>
           ) : (
             !pathname.startsWith("/dashboard") && !pathname.startsWith("/admin") && (
-              <Link href="/dashboard" className="btn text-xs py-1.5 px-3">
+              <Link href="/dashboard" className="hidden sm:inline-flex btn text-xs py-1.5 px-3">
                 {t("dashboard")} →
               </Link>
             )

@@ -504,7 +504,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                       : "Auto-release countdown is paused due to active dispute or return request."}
                   </div>
                 ) : countdown ? (
-                  <div className="flex items-center gap-4 py-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 py-2">
                     <div className="font-mono text-2xl sm:text-3xl font-extrabold text-neutral-900 dark:text-neutral-100 tracking-wider">
                       {String(countdown.hours).padStart(2, "0")}h : {String(countdown.minutes).padStart(2, "0")}m : {String(countdown.seconds).padStart(2, "0")}s
                     </div>
