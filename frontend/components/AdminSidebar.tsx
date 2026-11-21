@@ -28,19 +28,19 @@ export default function AdminSidebar() {
   return (
     <aside className="w-full md:w-64 shrink-0 border-b md:border-b-0 md:border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black p-4 flex flex-col justify-between gap-4 md:sticky md:top-20 md:self-start md:h-[calc(100vh-6.5rem)] overflow-hidden">
       <div className="space-y-4">
-        <div className="box p-3.5 bg-neutral-900 text-white dark:bg-neutral-950 border border-neutral-700 space-y-1.5">
+        <div className="box p-3.5 bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 space-y-1.5">
           <div className="flex items-center justify-between">
             <span className="text-xs uppercase font-extrabold tracking-widest text-accent">
               PakkaDeal Admin
             </span>
-            <span className="px-1.5 py-0.2 text-[10px] uppercase font-bold border border-accent bg-accent/20 text-white">
+            <span className="px-1.5 py-0.5 text-[10px] uppercase font-bold border border-accent/40 bg-accent/10 text-accent">
               Root
             </span>
           </div>
           {user && (
-            <div className="pt-1.5 border-t border-neutral-800">
-              <div className="font-mono text-xs font-semibold text-neutral-200">{user.phone}</div>
-              <div className="text-[11px] text-neutral-400">{t("administrator")}</div>
+            <div className="pt-1.5 border-t border-neutral-200 dark:border-neutral-800">
+              <div className="font-mono text-xs font-semibold text-neutral-900 dark:text-neutral-100">{user.phone}</div>
+              <div className="text-[11px] text-neutral-500 dark:text-neutral-400">{t("administrator")}</div>
             </div>
           )}
         </div>
