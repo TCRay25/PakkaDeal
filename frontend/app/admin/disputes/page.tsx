@@ -6,7 +6,7 @@ import { useI18n } from "@/lib/i18n";
 import { useSocket } from "@/lib/socket";
 
 export default function AdminDisputesPage() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { on } = useSocket();
   const [disputes, setDisputes] = useState<Dispute[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,7 +35,11 @@ export default function AdminDisputesPage() {
   }, [on]);
 
   const handleDecision = async (id: number, decision: "upheld" | "rejected") => {
-    if (!confirm(`Are you sure you want to mark this dispute as ${decision.toUpperCase()}?`)) return;
+    const confirmMsg =
+      lang === "bn"
+        ? `আপনি কি নিশ্চিত যে এই বিরোধটি ${decision === "upheld" ? "অনুমোদন (UPHELD)" : "খারিজ (REJECTED)"} করতে চান?`
+        : `Are you sure you want to mark this dispute as ${decision.toUpperCase()}?`;
+    if (!confirm(confirmMsg)) return;
     setActing(id);
     try {
       await post(`/disputes/${id}/decide`, {
@@ -55,7 +59,9 @@ export default function AdminDisputesPage() {
       <div className="border-b border-neutral-200 dark:border-neutral-800 pb-4">
         <h1 className="text-2xl font-bold tracking-tight">{t("disputesQueue")}</h1>
         <p className="text-sm text-neutral-500">
-          Review counterparty dispute claims, inspect physical unboxing evidence, and apply final decisions.
+          {lang === "bn"
+            ? "উভয় পক্ষের বিরোধের দাবি পর্যালোচনা, আনবক্সিং প্রমাণ যাচাই এবং চূড়ান্ত সিদ্ধান্ত প্রদান করুন।"
+            : "Review counterparty dispute claims, inspect physical unboxing evidence, and apply final decisions."}
         </p>
       </div>
 
@@ -63,7 +69,7 @@ export default function AdminDisputesPage() {
         <p className="text-sm text-neutral-500">{t("loading")}</p>
       ) : disputes.length === 0 ? (
         <div className="box p-8 text-center text-sm text-neutral-500">
-          No disputes pending in the queue.
+          {lang === "bn" ? "বিরোধ সারিতে কোনো অপেক্ষমাণ অভিযোগ নেই।" : "No disputes pending in the queue."}
         </div>
       ) : (
         <div className="space-y-6">
@@ -80,7 +86,7 @@ export default function AdminDisputesPage() {
                 <div className="space-y-0.5">
                   <div className="flex items-center gap-2">
                     <span className="text-xs uppercase font-bold text-neutral-500">
-                      Dispute #{d.id} on Deal:
+                      {lang === "bn" ? "অভিযোগ #" : "Dispute #"}{d.id} {lang === "bn" ? "ডিল:" : "on Deal:"}
                     </span>
                     <Link
                       href={`/deal/${d.deal_code}`}
@@ -96,7 +102,7 @@ export default function AdminDisputesPage() {
 
                 <div className="flex items-center gap-3">
                   <span className="font-mono font-bold text-sm">
-                    Escrow: {Number(d.total_amount).toLocaleString()} BDT
+                    {lang === "bn" ? "এসক্রো:" : "Escrow:"} {Number(d.total_amount).toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
                   </span>
                   <span
                     className={`text-xs uppercase font-bold px-2 py-0.5 border ${
@@ -107,7 +113,11 @@ export default function AdminDisputesPage() {
                         : "border-rose-600 text-rose-600"
                     }`}
                   >
-                    {d.status}
+                    {d.status === "open"
+                      ? (lang === "bn" ? "উন্মুক্ত" : "open")
+                      : d.status === "upheld"
+                      ? (lang === "bn" ? "অনুমোদিত" : "upheld")
+                      : (lang === "bn" ? "খারিজ" : "rejected")}
                   </span>
                 </div>
               </div>
@@ -115,12 +125,16 @@ export default function AdminDisputesPage() {
               {/* Counterparty summary */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs p-3 bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800">
                 <div>
-                  <span className="text-neutral-500 uppercase block font-semibold">Complainant (Buyer):</span>
+                  <span className="text-neutral-500 uppercase block font-semibold">
+                    {lang === "bn" ? "অভিযোগকারী (বায়ার):" : "Complainant (Buyer):"}
+                  </span>
                   <span className="font-semibold text-neutral-800 dark:text-neutral-200">{d.buyer_name}</span>
                   <span className="font-mono text-neutral-500 block">{d.buyer_phone}</span>
                 </div>
                 <div>
-                  <span className="text-neutral-500 uppercase block font-semibold">Seller:</span>
+                  <span className="text-neutral-500 uppercase block font-semibold">
+                    {lang === "bn" ? "বিক্রেতা:" : "Seller:"}
+                  </span>
                   <span className="font-semibold text-neutral-800 dark:text-neutral-200">
                     {d.page_name || d.seller_name}
                   </span>
@@ -132,7 +146,9 @@ export default function AdminDisputesPage() {
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                 <div className="lg:col-span-7 space-y-3">
                   <div className="space-y-1">
-                    <span className="text-xs uppercase font-bold text-neutral-500">Buyer&apos;s Stated Reason:</span>
+                    <span className="text-xs uppercase font-bold text-neutral-500">
+                      {lang === "bn" ? "বায়ার কর্তৃক উল্লিখিত কারণ:" : "Buyer's Stated Reason:"}
+                    </span>
                     <p className="text-sm text-neutral-900 dark:text-neutral-100 bg-white dark:bg-black p-3 border border-neutral-200 dark:border-neutral-800">
                       {d.reason}
                     </p>
@@ -140,7 +156,9 @@ export default function AdminDisputesPage() {
 
                   {d.evidence_text && (
                     <div className="space-y-1">
-                      <span className="text-xs uppercase font-bold text-neutral-500">Additional Evidence:</span>
+                      <span className="text-xs uppercase font-bold text-neutral-500">
+                        {lang === "bn" ? "অতিরিক্ত প্রমাণ / বিবরণ:" : "Additional Evidence:"}
+                      </span>
                       <p className="text-xs text-neutral-600 dark:text-neutral-400 bg-white dark:bg-black p-3 border border-neutral-200 dark:border-neutral-800">
                         {d.evidence_text}
                       </p>
@@ -151,17 +169,20 @@ export default function AdminDisputesPage() {
                   <div className="box p-4 border border-purple-300 dark:border-purple-800 bg-white dark:bg-black space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold uppercase tracking-wider text-accent">
-                        Multimodal AI Analysis
+                        {lang === "bn" ? "মাল্টিমোডাল এআই বিশ্লেষণ" : "Multimodal AI Analysis"}
                       </span>
                       <span className="text-xs font-mono font-bold uppercase text-neutral-500">
-                        Category: {d.category}
+                        {lang === "bn" ? "ক্যাটাগরি:" : "Category:"} {d.category}
                       </span>
                     </div>
                     <p className="text-xs text-neutral-700 dark:text-neutral-300">
-                      {d.ai_summary || "Visual analysis evaluated listing against submitted evidence."}
+                      {d.ai_summary || (lang === "bn" ? "জমা দেওয়া প্রমাণের সাথে ডিল তথ্যের ভিজ্যুয়াল বিশ্লেষণ করা হয়েছে।" : "Visual analysis evaluated listing against submitted evidence.")}
                     </p>
                     <div className="text-xs font-semibold text-purple-700 dark:text-purple-300 pt-1">
-                      Recommendation: <strong>{d.ai_recommendation.toUpperCase()}</strong> (AI only suggests; human admin decides)
+                      {lang === "bn" ? "সুপারিশ:" : "Recommendation:"} <strong>{d.ai_recommendation.toUpperCase()}</strong>{" "}
+                      <span className="text-neutral-500 font-normal">
+                        {lang === "bn" ? "(এআই শুধুমাত্র পরামর্শ দেয়; চূড়ান্ত সিদ্ধান্ত অ্যাডমিন নেন)" : "(AI only suggests; human admin decides)"}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -169,7 +190,7 @@ export default function AdminDisputesPage() {
                 {/* Evidence Photo */}
                 <div className="lg:col-span-5 space-y-2">
                   <span className="text-xs uppercase font-bold text-neutral-500 block">
-                    Uploaded Photo Evidence:
+                    {lang === "bn" ? "আপলোডকৃত ছবির প্রমাণ:" : "Uploaded Photo Evidence:"}
                   </span>
                   {d.has_photo ? (
                     <div className="border border-neutral-300 dark:border-neutral-700 bg-black/5 dark:bg-white/5 p-2">
@@ -181,7 +202,7 @@ export default function AdminDisputesPage() {
                     </div>
                   ) : (
                     <div className="p-8 text-center border border-dashed border-neutral-300 dark:border-neutral-700 text-xs text-neutral-500">
-                      No photographic evidence attached to this claim.
+                      {lang === "bn" ? "এই অভিযোগে কোনো ছবির প্রমাণ সংযুক্ত করা হয়নি।" : "No photographic evidence attached to this claim."}
                     </div>
                   )}
                 </div>
@@ -194,7 +215,11 @@ export default function AdminDisputesPage() {
                     <label htmlFor={`admin-note-input-${d.id}`}>{t("adminNotes")}</label>
                     <input
                       id={`admin-note-input-${d.id}`}
-                      placeholder="e.g. Broken screen confirmed from unboxing photo. Full refund granted."
+                      placeholder={
+                        lang === "bn"
+                          ? "যেমন: আনবক্সিং ছবিতে ভাঙা পণ্য নিশ্চিত। সম্পূর্ণ রিফান্ড অনুমোদন।"
+                          : "e.g. Broken screen confirmed from unboxing photo. Full refund granted."
+                      }
                       value={adminNotes[d.id] || ""}
                       onChange={(e) => setAdminNotes({ ...adminNotes, [d.id]: e.target.value })}
                     />
@@ -206,20 +231,21 @@ export default function AdminDisputesPage() {
                       disabled={acting === d.id}
                       className="btn-success text-sm py-2 px-4"
                     >
-                      {acting === d.id ? "Processing..." : t("uphold")}
+                      {acting === d.id ? (lang === "bn" ? "প্রক্রিয়াকরণ চলছে..." : "Processing...") : t("uphold")}
                     </button>
                     <button
                       onClick={() => handleDecision(d.id, "rejected")}
                       disabled={acting === d.id}
                       className="btn-danger text-sm py-2 px-4"
                     >
-                      {acting === d.id ? "Processing..." : t("reject")}
+                      {acting === d.id ? (lang === "bn" ? "প্রক্রিয়াকরণ চলছে..." : "Processing...") : t("reject")}
                     </button>
                   </div>
                 </div>
               ) : (
                 <div className="pt-3 border-t border-neutral-200 dark:border-neutral-800 text-xs text-neutral-500">
-                  <strong>Resolution:</strong> {d.admin_notes || "Decision finalized and ledger updated."}
+                  <strong>{lang === "bn" ? "নিষ্পত্তি:" : "Resolution:"}</strong>{" "}
+                  {d.admin_notes || (lang === "bn" ? "সিদ্ধান্ত চূড়ান্ত হয়েছে এবং লেজার আপডেট হয়েছে।" : "Decision finalized and ledger updated.")}
                 </div>
               )}
             </div>
