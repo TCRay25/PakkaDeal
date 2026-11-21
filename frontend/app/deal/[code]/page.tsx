@@ -518,7 +518,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
 
                 <p className="text-[11px] text-neutral-600 dark:text-neutral-400">
                   {lang === "bn"
-                    ? "ক্রেতা পণ্য যাচাই করে 'Confirm Receipt' ক্লিক করুন। কোন সমস্যা থাকলে বিরোধ উত্থাপন করুন।"
+                    ? "ক্রেতা পণ্য যাচাই করে 'রসিদ নিশ্চিত করুন' ক্লিক করুন। কোনো সমস্যা থাকলে বিরোধ উত্থাপন করুন।"
                     : "Buyer should inspect the parcel and confirm receipt. If any damage or issue, open a dispute before the timer expires."}
                 </p>
               </div>
@@ -1291,13 +1291,15 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
 
                 {courierName === "Other" && (
                   <div>
-                    <label htmlFor="custom-courier-name">Courier / Agency Name *</label>
+                    <label htmlFor="custom-courier-name">
+                      {lang === "bn" ? "কুরিয়ার বা এজেন্সির নাম *" : "Courier / Agency Name *"}
+                    </label>
                     <input
                       id="custom-courier-name"
                       required
                       value={customCourierName}
                       onChange={(e) => setCustomCourierName(e.target.value)}
-                      placeholder="e.g. Janani Express / Karatoa Courier"
+                      placeholder={lang === "bn" ? "যেমন: জননী এক্সপ্রেস / করতোয়া কুরিয়ার" : "e.g. Janani Express / Karatoa Courier"}
                     />
                   </div>
                 )}
@@ -1419,7 +1421,11 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                 rows={3}
                 value={disputeReason}
                 onChange={(e) => setDisputeReason(e.target.value)}
-                placeholder="e.g. Screen is cracked and box was opened, or received wrong size"
+                placeholder={
+                  lang === "bn"
+                    ? "যেমন: স্ক্রিন ভাঙা এবং বাক্স খোলা ছিল, অথবা ভুল সাইজ পেয়েছি"
+                    : "e.g. Screen is cracked and box was opened, or received wrong size"
+                }
               />
             </div>
             <div>
@@ -1441,7 +1447,11 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                 id="dispute-evidence-input"
                 value={disputeEvidence}
                 onChange={(e) => setDisputeEvidence(e.target.value)}
-                placeholder="Any courier receipt or serial number"
+                placeholder={
+                  lang === "bn"
+                    ? "যেকোনো কুরিয়ার রসিদ বা সিরিয়াল নম্বর"
+                    : "Any courier receipt or serial number"
+                }
               />
             </div>
             <div className="flex gap-2">
@@ -1463,7 +1473,9 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
               <button type="button" onClick={() => setShowReturnModal(false)} className="text-neutral-500">✕</button>
             </div>
             <div>
-              <label htmlFor="return-courier-select">Return Courier</label>
+              <label htmlFor="return-courier-select">
+                {lang === "bn" ? "রিটার্ন কুরিয়ার" : "Return Courier"}
+              </label>
               <select
                 id="return-courier-select"
                 value={returnCourierName}
@@ -1473,7 +1485,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                 <option value="Steadfast">Steadfast Courier</option>
                 <option value="RedX">RedX Logistics</option>
                 <option value="Paperfly">Paperfly</option>
-                <option value="Other">Other Local Courier</option>
+                <option value="Other">{lang === "bn" ? "অন্যান্য স্থানীয় কুরিয়ার" : "Other Local Courier"}</option>
               </select>
             </div>
             <div>

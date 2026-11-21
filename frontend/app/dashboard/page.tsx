@@ -6,6 +6,7 @@ import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 import StatusBadge from "@/components/StatusBadge";
 import { translateNotification } from "@/lib/translateNotification";
+import { translateDealType } from "@/lib/translateTimeline";
 
 export default function Dashboard() {
   const { t, lang } = useI18n();
@@ -75,7 +76,9 @@ export default function Dashboard() {
 
         <div className="box p-4 border border-neutral-200 dark:border-neutral-800 space-y-1">
           <span className="text-xs uppercase font-semibold text-neutral-500">{t("heldFunds")}</span>
-          <div className="text-2xl font-bold text-accent font-mono">{totalHeld.toLocaleString()} BDT</div>
+          <div className="text-2xl font-bold text-accent font-mono">
+            {totalHeld.toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
+          </div>
           <span className="text-xs text-neutral-400">{t("lockedInEscrow")}</span>
         </div>
 
@@ -154,7 +157,7 @@ export default function Dashboard() {
                         <div className="text-xs font-mono text-neutral-500">{deal.code}</div>
                       </td>
                       <td className="px-4 py-3 text-xs uppercase text-neutral-600 dark:text-neutral-400">
-                        {deal.deal_type}
+                        {translateDealType(deal.deal_type, lang)}
                       </td>
                       <td className="px-4 py-3 text-xs">
                         {isCreator ? (
@@ -176,7 +179,7 @@ export default function Dashboard() {
                         )}
                       </td>
                       <td className="px-4 py-3 font-mono font-semibold text-neutral-900 dark:text-neutral-100">
-                        {deal.total_amount.toLocaleString()} BDT
+                        {deal.total_amount.toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
                       </td>
                       <td className="px-4 py-3">
                         <StatusBadge status={deal.status} />

@@ -12,7 +12,7 @@ export default function StatusBadge({ status }: { status: string }) {
     colorClasses = "border-blue-500 text-blue-600 dark:border-blue-400 dark:text-blue-400 bg-blue-500/10";
   } else if (s === "shipped" || s === "in_transit") {
     colorClasses = "border-cyan-500 text-cyan-600 dark:border-cyan-400 dark:text-cyan-400 bg-cyan-500/10";
-  } else if (s === "payment_pending") {
+  } else if (s === "payment_pending" || s === "created") {
     colorClasses = "border-yellow-500 text-yellow-700 dark:border-yellow-400 dark:text-yellow-400 bg-yellow-500/10";
   } else if (s === "delivered" || s === "buyer_confirmed") {
     colorClasses = "border-amber-500 text-amber-600 dark:border-amber-400 dark:text-amber-400 bg-amber-500/10";

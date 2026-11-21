@@ -27,12 +27,12 @@ export default function MoneyBreakdown({ deal }: { deal: Deal }) {
       </h3>
       <div className="grid grid-cols-2 gap-3 text-sm">
         <div>
-          <span className="text-neutral-500 dark:text-neutral-400 block text-xs uppercase">{t("price")}</span>
+          <span className="text-neutral-500 dark:text-neutral-400 block text-xs uppercase">{t("agreedItemPrice")}</span>
           <span className="font-semibold">{deal.price.toLocaleString()}{cur}</span>
         </div>
         {deal.deal_type === "product" && (
           <div>
-            <span className="text-neutral-500 dark:text-neutral-400 block text-xs uppercase">{t("charge")}</span>
+            <span className="text-neutral-500 dark:text-neutral-400 block text-xs uppercase">{t("deliveryChargeLabel")}</span>
             <span className="font-semibold">{deal.delivery_charge.toLocaleString()}{cur}</span>
           </div>
         )}

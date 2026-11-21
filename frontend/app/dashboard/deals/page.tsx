@@ -5,6 +5,7 @@ import { api, Deal } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 import StatusBadge from "@/components/StatusBadge";
+import { translateDealType } from "@/lib/translateTimeline";
 
 export default function DealsListPage() {
   const { t, lang } = useI18n();
@@ -58,7 +59,11 @@ export default function DealsListPage() {
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-neutral-200 dark:border-neutral-800 pb-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{t("deals")}</h1>
-          <p className="text-sm text-neutral-500">Track and manage all your escrow transactions.</p>
+          <p className="text-sm text-neutral-500">
+            {lang === "bn"
+              ? "আপনার সমস্ত এসক্রো লেনদেন পর্যবেক্ষণ ও পরিচালনা করুন।"
+              : "Track and manage all your escrow transactions."}
+          </p>
         </div>
         <Link href="/dashboard/new" className="btn text-sm">
           + {t("createDeal")}
@@ -142,7 +147,7 @@ export default function DealsListPage() {
               className="w-48 text-xs py-1 px-2 border border-neutral-300 dark:border-neutral-700"
             />
             <button type="submit" className="btn text-xs py-1 px-3">
-              Search
+              {lang === "bn" ? "অনুসন্ধান" : "Search"}
             </button>
           </form>
         </div>
@@ -196,7 +201,7 @@ export default function DealsListPage() {
                       <div className="text-xs font-mono text-neutral-500">{deal.code}</div>
                     </td>
                     <td className="px-4 py-3 text-xs uppercase text-neutral-600 dark:text-neutral-400">
-                      {deal.deal_type}
+                      {translateDealType(deal.deal_type, lang)}
                     </td>
                     <td className="px-4 py-3 text-xs">
                       {isCreator ? (
@@ -218,7 +223,7 @@ export default function DealsListPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 font-mono font-semibold">
-                      {deal.total_amount.toLocaleString()} BDT
+                      {deal.total_amount.toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
                     </td>
                     <td className="px-4 py-3">
                       <StatusBadge status={deal.status} />
@@ -227,7 +232,7 @@ export default function DealsListPage() {
                       {getNextAction(deal.status)}
                     </td>
                     <td className="px-4 py-3 text-xs text-neutral-500 whitespace-nowrap">
-                      {new Date(deal.created_at).toLocaleDateString()}
+                      {new Date(deal.created_at).toLocaleDateString(lang === "bn" ? "bn-BD" : "en-GB")}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1.5">

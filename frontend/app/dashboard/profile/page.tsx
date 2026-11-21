@@ -4,6 +4,7 @@ import Link from "next/link";
 import { api, patch } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
+import { toBengaliDigits } from "@/lib/settings";
 
 type ProfileStats = {
   user: any;
@@ -23,7 +24,7 @@ type ProfileStats = {
 };
 
 export default function ProfilePage() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { user, refresh } = useAuth();
   const [data, setData] = useState<ProfileStats | null>(null);
   const [name, setName] = useState("");
@@ -93,7 +94,9 @@ export default function ProfilePage() {
 
           <div className="box p-3 border border-accent bg-white dark:bg-black text-center min-w-[120px]">
             <span className="text-xs uppercase font-bold text-neutral-500 block">{t("trust")}</span>
-            <div className="text-2xl font-extrabold font-mono text-accent">{trustScore} / 100</div>
+            <div className="text-2xl font-extrabold font-mono text-accent">
+              {lang === "bn" ? toBengaliDigits(trustScore) : trustScore} / {lang === "bn" ? "১০০" : "100"}
+            </div>
           </div>
         </div>
 
@@ -101,15 +104,21 @@ export default function ProfilePage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
           <div className="p-3 border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black">
             <span className="text-xs text-neutral-500 block uppercase">{t("completedDeals")}</span>
-            <span className="text-lg font-bold font-mono text-emerald-600 dark:text-emerald-400">{totalCompleted}</span>
+            <span className="text-lg font-bold font-mono text-emerald-600 dark:text-emerald-400">
+              {lang === "bn" ? toBengaliDigits(totalCompleted) : totalCompleted}
+            </span>
           </div>
           <div className="p-3 border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black">
             <span className="text-xs text-neutral-500 block uppercase">{t("doorstepRefusals")}</span>
-            <span className="text-lg font-bold font-mono text-neutral-600 dark:text-neutral-400">{totalRefused}</span>
+            <span className="text-lg font-bold font-mono text-neutral-600 dark:text-neutral-400">
+              {lang === "bn" ? toBengaliDigits(totalRefused) : totalRefused}
+            </span>
           </div>
           <div className="p-3 border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black">
             <span className="text-xs text-neutral-500 block uppercase">{t("disputes")}</span>
-            <span className="text-lg font-bold font-mono text-neutral-600 dark:text-neutral-400">{totalDisputes}</span>
+            <span className="text-lg font-bold font-mono text-neutral-600 dark:text-neutral-400">
+              {lang === "bn" ? toBengaliDigits(totalDisputes) : totalDisputes}
+            </span>
           </div>
           <div className="p-3 border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black">
             <span className="text-xs text-neutral-500 block uppercase">{t("publicLink")}</span>
@@ -131,27 +140,31 @@ export default function ProfilePage() {
               id="edit-name-input"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Rahim Chowdhury"
+              placeholder={lang === "bn" ? "যেমন: রহিম চৌধুরী" : "e.g. Rahim Chowdhury"}
             />
           </div>
 
           <div>
-            <label htmlFor="edit-page-name-input">{t("pageName")} (Optional)</label>
+            <label htmlFor="edit-page-name-input">
+              {t("pageName")} {lang === "bn" ? "(ঐচ্ছিক)" : "(Optional)"}
+            </label>
             <input
               id="edit-page-name-input"
               value={pageName}
               onChange={(e) => setPageName(e.target.value)}
-              placeholder="e.g. Gadget Corner BD"
+              placeholder={lang === "bn" ? "যেমন: গ্যাজেট কর্নার বিডি" : "e.g. Gadget Corner BD"}
             />
           </div>
 
           <div>
-            <label htmlFor="edit-page-url-input">{t("pageUrl")} (Optional)</label>
+            <label htmlFor="edit-page-url-input">
+              {t("pageUrl")} {lang === "bn" ? "(ঐচ্ছিক)" : "(Optional)"}
+            </label>
             <input
               id="edit-page-url-input"
               value={pageUrl}
               onChange={(e) => setPageUrl(e.target.value)}
-              placeholder="e.g. facebook.com/gadgetcornerbd"
+              placeholder={lang === "bn" ? "যেমন: facebook.com/gadgetcornerbd" : "e.g. facebook.com/gadgetcornerbd"}
             />
           </div>
 

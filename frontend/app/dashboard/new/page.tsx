@@ -7,7 +7,7 @@ import { useAuth } from "@/lib/auth";
 import { useSettings } from "@/lib/settings";
 
 export default function CreateDealPage() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { user } = useAuth();
   const { calculateFee } = useSettings();
   const router = useRouter();
@@ -107,7 +107,13 @@ export default function CreateDealPage() {
                 value={product}
                 onChange={(e) => setProduct(e.target.value)}
                 placeholder={
-                  dealType === "product"
+                  lang === "bn"
+                    ? dealType === "product"
+                      ? "যেমন: সোনি WH-1000XM5 হেডফোন"
+                      : dealType === "rental"
+                      ? "যেমন: ফ্ল্যাট ৪বি-এর জন্য ২ মাসের জামানত"
+                      : "যেমন: ই-কমার্স ওয়েবসাইট ফ্রন্টএন্ড মাইলস্টোন"
+                    : dealType === "product"
                     ? "e.g. Sony WH-1000XM5 Headphones"
                     : dealType === "rental"
                     ? "e.g. 2-Month Security Deposit for Studio 4B"
@@ -123,7 +129,11 @@ export default function CreateDealPage() {
                 rows={3}
                 value={details}
                 onChange={(e) => setDetails(e.target.value)}
-                placeholder="Include condition, warranty, specifications, or agreed completion terms..."
+                placeholder={
+                  lang === "bn"
+                    ? "পণ্যের অবস্থা, ওয়ারেন্টি, স্পেসিফিকেশন বা চুক্তির শর্তাবলী উল্লেখ করুন..."
+                    : "Include condition, warranty, specifications, or agreed completion terms..."
+                }
               />
             </div>
           </div>
@@ -137,7 +147,7 @@ export default function CreateDealPage() {
                 required
                 value={buyerName}
                 onChange={(e) => setBuyerName(e.target.value)}
-                placeholder="e.g. Nusrat Jahan"
+                placeholder={lang === "bn" ? "যেমন: নুসরাত জাহান" : "e.g. Nusrat Jahan"}
               />
             </div>
             <div>
@@ -163,20 +173,20 @@ export default function CreateDealPage() {
                 required
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
-                placeholder="House, Road, Area, Landmark"
+                placeholder={lang === "bn" ? "বাড়ি, রোড, এলাকা, ল্যান্ডমার্ক" : "House, Road, Area, Landmark"}
               />
             </div>
             <div>
               <label htmlFor="deal-area-select">{t("area")}</label>
               <select id="deal-area-select" value={area} onChange={(e) => setArea(e.target.value)}>
-                <option value="Dhaka">Dhaka</option>
-                <option value="Chattogram">Chattogram</option>
-                <option value="Cumilla">Cumilla</option>
-                <option value="Sylhet">Sylhet</option>
-                <option value="Rajshahi">Rajshahi</option>
-                <option value="Khulna">Khulna</option>
-                <option value="Barishal">Barishal</option>
-                <option value="Rangpur">Rangpur</option>
+                <option value="Dhaka">{lang === "bn" ? "ঢাকা" : "Dhaka"}</option>
+                <option value="Chattogram">{lang === "bn" ? "চট্টগ্রাম" : "Chattogram"}</option>
+                <option value="Cumilla">{lang === "bn" ? "কুমিল্লা" : "Cumilla"}</option>
+                <option value="Sylhet">{lang === "bn" ? "সিলেট" : "Sylhet"}</option>
+                <option value="Rajshahi">{lang === "bn" ? "রাজশাহী" : "Rajshahi"}</option>
+                <option value="Khulna">{lang === "bn" ? "খুলনা" : "Khulna"}</option>
+                <option value="Barishal">{lang === "bn" ? "বরিশাল" : "Barishal"}</option>
+                <option value="Rangpur">{lang === "bn" ? "রংপুর" : "Rangpur"}</option>
               </select>
             </div>
           </div>

@@ -7,7 +7,7 @@ import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 
 export default function RegisterPage() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { login } = useAuth();
   const router = useRouter();
 
@@ -109,14 +109,14 @@ export default function RegisterPage() {
           <div>
             <label htmlFor="reg-city-select">{t("area")}</label>
             <select id="reg-city-select" value={city} onChange={(e) => setCity(e.target.value)}>
-              <option value="Dhaka">Dhaka</option>
-              <option value="Chattogram">Chattogram</option>
-              <option value="Cumilla">Cumilla</option>
-              <option value="Sylhet">Sylhet</option>
-              <option value="Rajshahi">Rajshahi</option>
-              <option value="Khulna">Khulna</option>
-              <option value="Barishal">Barishal</option>
-              <option value="Rangpur">Rangpur</option>
+              <option value="Dhaka">{lang === "bn" ? "ঢাকা" : "Dhaka"}</option>
+              <option value="Chattogram">{lang === "bn" ? "চট্টগ্রাম" : "Chattogram"}</option>
+              <option value="Cumilla">{lang === "bn" ? "কুমিল্লা" : "Cumilla"}</option>
+              <option value="Sylhet">{lang === "bn" ? "সিলেট" : "Sylhet"}</option>
+              <option value="Rajshahi">{lang === "bn" ? "রাজশাহী" : "Rajshahi"}</option>
+              <option value="Khulna">{lang === "bn" ? "খুলনা" : "Khulna"}</option>
+              <option value="Barishal">{lang === "bn" ? "বরিশাল" : "Barishal"}</option>
+              <option value="Rangpur">{lang === "bn" ? "রংপুর" : "Rangpur"}</option>
             </select>
           </div>
 
