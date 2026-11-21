@@ -8,8 +8,8 @@ export default function Footer() {
   const pathname = usePathname();
   const { t } = useI18n();
 
-  // Do not render footer on any dashboard (customer, seller) or admin pages
-  if (pathname.startsWith("/dashboard") || pathname.startsWith("/admin")) {
+  // Only render footer on the landing page ("/") and nowhere else
+  if (pathname !== "/" && pathname !== "") {
     return null;
   }
 

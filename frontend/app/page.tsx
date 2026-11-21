@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useI18n } from "@/lib/i18n";
 import Logo from "@/components/Logo";
 import AnimatedHeroLogo from "@/components/AnimatedHeroLogo";
+import Footer from "@/components/Footer";
 
 export default function Home() {
   const { t } = useI18n();
@@ -240,6 +241,9 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {/* Footer rendered only on landing page */}
+      <Footer />
     </div>
   );
 }

@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import "./globals.css";
 import Providers from "@/components/Providers";
 import Header from "@/components/Header";
-import Footer from "@/components/Footer";
 
 export const metadata: Metadata = {
   title: "PakkaDeal | Trust & Escrow Platform for Bangladesh",
@@ -19,7 +18,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Providers>
           <Header />
           <div className="flex-1 w-full">{children}</div>
-          <Footer />
         </Providers>
       </body>
     </html>
