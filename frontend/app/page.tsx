@@ -8,7 +8,7 @@ import AnimatedHeroLogo from "@/components/AnimatedHeroLogo";
 import Footer from "@/components/Footer";
 
 export default function Home() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { calculateFee } = useSettings();
   const [calcAmount, setCalcAmount] = useState<number>(5000);
   const fee = calculateFee(calcAmount);
@@ -99,7 +99,7 @@ export default function Home() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div className="box border border-neutral-200 dark:border-neutral-800 p-6 space-y-4">
               <div className="w-8 h-8 bg-neutral-900 text-white dark:bg-white dark:text-black flex items-center justify-center font-bold text-sm">
-                1
+                {lang === "bn" ? "১" : "1"}
               </div>
               <h3 className="text-lg font-bold text-neutral-900 dark:text-neutral-100">
                 {t("howProductTitle")}
@@ -111,7 +111,7 @@ export default function Home() {
 
             <div className="box border border-neutral-200 dark:border-neutral-800 p-6 space-y-4">
               <div className="w-8 h-8 bg-neutral-900 text-white dark:bg-white dark:text-black flex items-center justify-center font-bold text-sm">
-                2
+                {lang === "bn" ? "২" : "2"}
               </div>
               <h3 className="text-lg font-bold text-neutral-900 dark:text-neutral-100">
                 {t("howReturnTitle")}
@@ -123,7 +123,7 @@ export default function Home() {
 
             <div className="box border border-neutral-200 dark:border-neutral-800 p-6 space-y-4">
               <div className="w-8 h-8 bg-neutral-900 text-white dark:bg-white dark:text-black flex items-center justify-center font-bold text-sm">
-                3
+                {lang === "bn" ? "৩" : "3"}
               </div>
               <h3 className="text-lg font-bold text-neutral-900 dark:text-neutral-100">
                 {t("howRentalTitle")}

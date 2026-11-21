@@ -20,7 +20,9 @@ export default function HowItWorksPage() {
       <div className="space-y-12">
         <section className="box p-6 space-y-4">
           <div className="flex items-center gap-3">
-            <span className="w-8 h-8 bg-accent text-white flex items-center justify-center font-bold">1</span>
+            <span className="w-8 h-8 bg-accent text-white flex items-center justify-center font-bold">
+              {lang === "bn" ? "১" : "1"}
+            </span>
             <h2 className="text-xl font-bold">{t("howProductTitle")}</h2>
           </div>
           <p className="text-neutral-600 dark:text-neutral-400 text-sm leading-relaxed">{t("howProductText")}</p>
@@ -49,7 +51,9 @@ export default function HowItWorksPage() {
 
         <section className="box p-6 space-y-4">
           <div className="flex items-center gap-3">
-            <span className="w-8 h-8 bg-accent text-white flex items-center justify-center font-bold">2</span>
+            <span className="w-8 h-8 bg-accent text-white flex items-center justify-center font-bold">
+              {lang === "bn" ? "২" : "2"}
+            </span>
             <h2 className="text-xl font-bold">{t("howReturnTitle")}</h2>
           </div>
           <p className="text-neutral-600 dark:text-neutral-400 text-sm leading-relaxed">{t("howReturnText")}</p>
@@ -72,7 +76,9 @@ export default function HowItWorksPage() {
 
         <section className="box p-6 space-y-4">
           <div className="flex items-center gap-3">
-            <span className="w-8 h-8 bg-accent text-white flex items-center justify-center font-bold">3</span>
+            <span className="w-8 h-8 bg-accent text-white flex items-center justify-center font-bold">
+              {lang === "bn" ? "৩" : "3"}
+            </span>
             <h2 className="text-xl font-bold">{t("howRentalTitle")}</h2>
           </div>
           <p className="text-neutral-600 dark:text-neutral-400 text-sm leading-relaxed">{t("howRentalText")}</p>
