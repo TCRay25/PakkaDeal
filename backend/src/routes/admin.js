@@ -157,7 +157,7 @@ router.post("/deals/:code/audit-courier", async (req, res) => {
     fail(400, "Audit status must be 'approved' or 'rejected'");
   }
 
-  await q("update deals set manual_audit_status=$2, updated_at=datetime('now') where id=$1", [deal.id, status]);
+  await q("update deals set manual_audit_status=$2, updated_at=CURRENT_TIMESTAMP where id=$1", [deal.id, status]);
   await log(deal.id, "courier_audit", `Manual courier slip marked ${status} by admin.`, {
     fromStatus: deal.status,
     toStatus: deal.status,
@@ -213,6 +213,79 @@ router.get("/notifications", async (_req, res) => {
     order by id desc limit 100
   `);
   res.json(rows);
+});
+
+/**
+ * GET /admin/shipments
+ * Query: ?tracking=manual|failed|stuck|all&q=search
+ */
+router.get("/shipments", async (req, res) => {
+  const filter = req.query.tracking || req.query.filter || "all";
+  const search = (req.query.q || "").trim();
+
+  const stuckCondition = isSqliteDb()
+    ? "d.last_tracking_update < datetime('now', '-48 hours')"
+    : "d.last_tracking_update < now() - interval '48 hours'";
+
+  // Fetch summary counters
+  const countsRow = await one(`
+    select
+      count(*) as total,
+      count(case when d.is_manual_courier = 1 then 1 else null end) as manual,
+      count(case when d.standardized_status = 'delivery_failed' or coalesce(d.poll_failure_count, 0) > 3 then 1 else null end) as failed,
+      count(case when d.status in ('shipped', 'in_transit') and ${stuckCondition} then 1 else null end) as stuck
+    from deals d
+    where (d.tracking_id is not null and d.tracking_id != '')
+       or d.status in ('shipped', 'in_transit', 'delivered')
+  `);
+
+  let query = `
+    select
+      d.id, d.code, d.product, d.status, d.courier_name, d.tracking_id, d.is_manual_courier,
+      d.courier_phone, d.detection_confidence, d.tracking_source, d.standardized_status,
+      d.raw_courier_status, d.current_location, d.estimated_delivery_at, d.last_tracking_update,
+      d.last_polled_at, d.poll_failure_count, d.manual_audit_status, d.buyer_phone, d.buyer_name,
+      d.total_amount, d.created_at, d.updated_at,
+      u.name as seller_name, u.phone as seller_phone, u.page_name
+    from deals d
+    join users u on u.id = d.seller_id
+    where ((d.tracking_id is not null and d.tracking_id != '')
+       or d.status in ('shipped', 'in_transit', 'delivered'))
+  `;
+  const params = [];
+
+  if (filter === "manual") {
+    query += " and d.is_manual_courier = 1";
+  } else if (filter === "failed") {
+    query += " and (d.standardized_status = 'delivery_failed' or coalesce(d.poll_failure_count, 0) > 3)";
+  } else if (filter === "stuck") {
+    query += ` and d.status in ('shipped', 'in_transit') and ${stuckCondition}`;
+  }
+
+  if (search) {
+    params.push(`%${search}%`);
+    query += ` and (
+      d.tracking_id like $${params.length}
+      or d.code like $${params.length}
+      or d.product like $${params.length}
+      or d.courier_name like $${params.length}
+      or d.buyer_phone like $${params.length}
+      or u.phone like $${params.length}
+    )`;
+  }
+
+  query += " order by d.id desc limit 150";
+  const rows = await q(query, params);
+
+  res.json({
+    counts: {
+      total: Number(countsRow?.total) || 0,
+      manual: Number(countsRow?.manual) || 0,
+      failed: Number(countsRow?.failed) || 0,
+      stuck: Number(countsRow?.stuck) || 0,
+    },
+    shipments: rows || [],
+  });
 });
 
 router.get("/settings", async (_req, res) => {

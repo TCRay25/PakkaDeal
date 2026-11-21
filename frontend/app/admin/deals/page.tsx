@@ -11,7 +11,7 @@ export default function AdminDealsPage() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
-  const [quickFilter, setQuickFilter] = useState<"all" | "held" | "countdown" | "manual" | "disputed">("all");
+  const [quickFilter, setQuickFilter] = useState<"all" | "held" | "countdown" | "manual" | "failed" | "stuck" | "disputed">("all");
   const [search, setSearch] = useState("");
 
   // Action Modal State
@@ -105,7 +105,9 @@ export default function AdminDealsPage() {
           { id: "all", label: "All Contracts" },
           { id: "held", label: "💰 Escrow Held Funds" },
           { id: "countdown", label: "⏱️ 24h Countdown Active" },
-          { id: "manual", label: "⚠️ Manual Courier (Audit Needed)" },
+          { id: "manual", label: "⚠️ Manual Courier Audits" },
+          { id: "failed", label: "❌ Failed Tracking Lookups" },
+          { id: "stuck", label: "⏳ Stuck Shipments (>48h)" },
           { id: "disputed", label: "🚨 Open Disputes" },
         ].map((chip) => (
           <button
@@ -203,13 +205,40 @@ export default function AdminDealsPage() {
                   <td className="px-4 py-3 font-mono">{d.buyer_phone}</td>
                   <td className="px-4 py-3 font-mono font-bold">{d.total_amount.toLocaleString()} BDT</td>
                   <td className="px-4 py-3">
-                    <div>{d.courier_name}</div>
+                    <div className="font-semibold text-xs flex items-center gap-1.5">
+                      {d.courier_name}
+                      {d.detection_confidence ? (
+                        <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400">
+                          ({d.detection_confidence}%)
+                        </span>
+                      ) : null}
+                    </div>
                     {d.is_manual_courier ? (
-                      <span className="text-[10px] text-amber-600 font-bold font-mono">
-                        MANUAL ({d.manual_audit_status})
-                      </span>
+                      <div className="space-y-0.5">
+                        <span className="text-[10px] text-amber-600 font-bold font-mono block">
+                          MANUAL ({d.manual_audit_status || "pending"})
+                        </span>
+                        {d.has_consignment_slip && (
+                          <button
+                            type="button"
+                            onClick={() => setPreviewImage(`${API}/deals/${d.code}/consignment-slip`)}
+                            className="text-[10px] text-accent underline hover:text-black dark:hover:text-white"
+                          >
+                            View Slip 📄
+                          </button>
+                        )}
+                      </div>
                     ) : (
-                      <span className="text-[10px] text-neutral-400 font-mono">{d.tracking_id}</span>
+                      <div className="space-y-0.5">
+                        <span className="text-[10px] text-neutral-500 font-mono block">
+                          {d.tracking_id}
+                        </span>
+                        {d.current_location && (
+                          <span className="text-[10px] text-neutral-400 block truncate max-w-[140px]">
+                            📍 {d.current_location}
+                          </span>
+                        )}
+                      </div>
                     )}
                   </td>
                   <td className="px-4 py-3">

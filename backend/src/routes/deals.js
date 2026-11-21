@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import multer from "multer";
 import { config } from "../config.js";
 import { one, q } from "../db.js";
-import { auth, fail, optionalAuth } from "../http.js";
+import { auth, fail, optionalAuth, makeToken } from "../http.js";
 import { PHONE } from "./auth.js";
 import { getBuyer, successRatio } from "../services/trust.js";
 import { scoreOrder } from "../services/risk.js";
@@ -21,6 +21,11 @@ import {
   calculateFee,
   getSetting,
 } from "../services/settle.js";
+import {
+  detectCourier,
+  updateDealTracking,
+  getDealTrackingTimeline,
+} from "../services/tracking.service.js";
 
 const router = Router();
 const upload = multer({
@@ -35,10 +40,32 @@ const upload = multer({
   },
 });
 
-export async function loadDeal(code) {
-  const deal = await one("select * from deals where code=$1", [code]);
-  if (!deal) fail(404, "Deal not found");
-  return deal;
+export async function loadDeal(codeOrId) {
+  try {
+    const deal = await one(
+      "select * from deals where code=$1 or id=$2",
+      [String(codeOrId), Number(codeOrId) || 0]
+    );
+    if (!deal) fail(404, "Deal not found");
+    return deal;
+  } catch (err) {
+    if (err.message && err.message.includes('column "updated_at" of relation "deals" does not exist')) {
+      try {
+        await q("alter table deals add column if not exists updated_at timestamptz not null default now()");
+        await q("alter table deals add column if not exists created_at timestamptz not null default now()");
+        await q("alter table deals add column if not exists buyer_id int");
+        const deal = await one(
+          "select * from deals where code=$1 or id=$2",
+          [String(codeOrId), Number(codeOrId) || 0]
+        );
+        if (!deal) fail(404, "Deal not found");
+        return deal;
+      } catch (innerErr) {
+        throw err;
+      }
+    }
+    throw err;
+  }
 }
 
 const mask = (p) => (p && p.length >= 7 ? p.slice(0, 3) + "****" + p.slice(-3) : p);
@@ -61,9 +88,17 @@ async function view(deal, user) {
     "select id, reason, category, evidence_text, ai_summary, ai_recommendation, status, created_at from disputes where deal_id=$1 order by id desc",
     [deal.id]
   );
+  const tracking = deal.tracking_id ? await getDealTrackingTimeline(deal.id) : null;
 
-  const isSeller = !!user && user.id === deal.seller_id;
-  const isBuyer = !!user && user.phone === deal.buyer_phone;
+  const userPhone11 = user?.phone ? user.phone.replace(/\D/g, "").slice(-11) : "";
+  const dealBuyerPhone11 = deal.buyer_phone ? deal.buyer_phone.replace(/\D/g, "").slice(-11) : "";
+  const sellerPhone11 = seller?.phone ? seller.phone.replace(/\D/g, "").slice(-11) : "";
+
+  const isSeller = !!user && (Number(user.id) === Number(deal.seller_id) || (userPhone11 && userPhone11 === sellerPhone11));
+  const isBuyer = !!user && (
+    (deal.buyer_id && Number(user.id) === Number(deal.buyer_id)) ||
+    (userPhone11 && userPhone11 === dealBuyerPhone11)
+  );
   const isAdminUser = !!user && config.adminPhones.includes(user.phone);
 
   const escrowAccounts = {
@@ -99,6 +134,7 @@ async function view(deal, user) {
     events,
     ledger: isSeller || isBuyer || isAdminUser ? ledgerEntries : [],
     dispute: dispute || null,
+    tracking: tracking || null,
     me: {
       is_seller: isSeller,
       is_buyer: isBuyer,
@@ -109,16 +145,25 @@ async function view(deal, user) {
 }
 
 router.get("/", auth, async (req, res) => {
-  const { status, type, q: search } = req.query;
+  const { status, type, role, q: search } = req.query;
   await checkAllTimeouts();
 
+  const userPhone11 = (req.user.phone || "").replace(/\D/g, "").slice(-11);
+
   let query = `
-    select d.*, u.page_name, u.name as seller_name
+    select d.*, u.page_name, u.name as seller_name, u.phone as seller_phone
     from deals d
     join users u on u.id = d.seller_id
-    where (d.seller_id = $1 or d.buyer_phone = $2)
+    where (
+      d.seller_id = $1 or
+      d.buyer_id = $1 or
+      d.buyer_phone = $2 or
+      replace(replace(d.buyer_phone, '+88', ''), ' ', '') = $3 or
+      d.payment_sender = $2 or
+      replace(replace(d.payment_sender, '+88', ''), ' ', '') = $3
+    )
   `;
-  const params = [req.user.id, req.user.phone];
+  const params = [req.user.id, req.user.phone, userPhone11];
 
   if (status) {
     params.push(status);
@@ -127,6 +172,11 @@ router.get("/", auth, async (req, res) => {
   if (type) {
     params.push(type);
     query += ` and d.deal_type = $${params.length}`;
+  }
+  if (role === "seller") {
+    query += ` and d.seller_id = $1`;
+  } else if (role === "buyer") {
+    query += ` and (d.seller_id != $1 or d.buyer_id = $1 or d.buyer_phone = $2 or replace(replace(d.buyer_phone, '+88', ''), ' ', '') = $3)`;
   }
   if (search) {
     params.push(`%${search}%`);
@@ -137,11 +187,16 @@ router.get("/", auth, async (req, res) => {
   const rows = await q(query, params);
 
   // Strip blobs
-  const cleanRows = rows.map(({ consignment_slip, unboxing_photo, ...d }) => ({
-    ...d,
-    has_consignment_slip: !!consignment_slip,
-    has_unboxing_photo: !!unboxing_photo,
-  }));
+  const cleanRows = rows.map(({ consignment_slip, unboxing_photo, ...d }) => {
+    const isSeller = Number(d.seller_id) === Number(req.user.id);
+    return {
+      ...d,
+      is_seller: isSeller,
+      role: isSeller ? "seller" : "buyer",
+      has_consignment_slip: !!consignment_slip,
+      has_unboxing_photo: !!unboxing_photo,
+    };
+  });
 
   res.json(cleanRows);
 });
@@ -233,8 +288,15 @@ router.get("/:code", optionalAuth, async (req, res) => {
   let deal = await loadDeal(req.params.code);
 
   // Transition from created -> payment_pending when designated buyer views the link
-  if (req.user && req.user.phone === deal.buyer_phone && deal.status === "created") {
-    await q("update deals set status='payment_pending', updated_at=datetime('now') where id=$1", [deal.id]);
+  const userPhone11 = req.user?.phone ? req.user.phone.replace(/\D/g, "").slice(-11) : "";
+  const dealBuyerPhone11 = deal.buyer_phone ? deal.buyer_phone.replace(/\D/g, "").slice(-11) : "";
+  const isBuyerUser = req.user && (
+    (deal.buyer_id && Number(req.user.id) === Number(deal.buyer_id)) ||
+    (userPhone11 && userPhone11 === dealBuyerPhone11)
+  );
+
+  if (isBuyerUser && deal.status === "created") {
+    await q("update deals set status='payment_pending', updated_at=CURRENT_TIMESTAMP where id=$1", [deal.id]);
     await log(deal.id, "payment_pending", "Buyer opened deal link. Awaiting escrow payment.", {
       fromStatus: "created",
       toStatus: "payment_pending",
@@ -246,23 +308,107 @@ router.get("/:code", optionalAuth, async (req, res) => {
   res.json(await view(deal, req.user));
 });
 
-router.post("/:code/pay", auth, async (req, res) => {
+router.post("/:code/pay", optionalAuth, async (req, res) => {
   const deal = await loadDeal(req.params.code);
-  if (req.user.phone !== deal.buyer_phone) fail(403, "Only the designated buyer can pay for this deal");
   if (!["created", "payment_pending"].includes(deal.status)) {
     fail(400, "Deal cannot be paid in status: " + deal.status);
   }
 
+  const seller = await one("select id, phone from users where id=$1", [deal.seller_id]);
+  const userPhone11 = req.user?.phone ? req.user.phone.replace(/\D/g, "").slice(-11) : "";
+  const sellerPhone11 = seller?.phone ? seller.phone.replace(/\D/g, "").slice(-11) : "";
+
+  // STRICT BUSINESS LOGIC: Seller CANNOT pay for their own deal!
+  if (
+    req.user && (
+      Number(req.user.id) === Number(deal.seller_id) ||
+      (userPhone11 && userPhone11 === sellerPhone11)
+    )
+  ) {
+    fail(403, "আপনি এই ডিলের বিক্রেতা (Seller)। বিক্রেতা নিজের তৈরি করা ডিলে নিজে পেমেন্ট করতে পারবেন না। পেমেন্ট অবশ্যই বায়ার (ক্রেতা) কর্তৃক হতে হবে। লিংকটি বায়ারকে পাঠান।");
+  }
+
   const paymentMethod = (req.body.payment_method || "bKash").trim();
-  const senderNumber = (req.body.sender_number || req.user.phone).trim();
+  const senderNumber = (req.body.sender_number || req.user?.phone || deal.buyer_phone).trim();
   const trxId = (req.body.trx_id || `MOCK-${Date.now().toString(36).toUpperCase()}`).trim();
 
   if (senderNumber && !PHONE.test(senderNumber)) {
     fail(400, "Please provide a valid 11-digit sender phone number");
   }
 
+  // Ensure buyer user exists in `users` table
+  let buyerUser = req.user && Number(req.user.id) !== Number(deal.seller_id) ? req.user : null;
+  if (!buyerUser) {
+    buyerUser = await one("select * from users where phone=$1 or phone=$2", [deal.buyer_phone, senderNumber]);
+  }
+  if (!buyerUser) {
+    buyerUser = await one(
+      `insert into users(phone, name, role, page_name, seller_trust, buyer_trust)
+       values($1, $2, 'buyer', '', 60, 60) returning *`,
+      [deal.buyer_phone || senderNumber, deal.buyer_name || "Buyer " + (deal.buyer_phone || senderNumber).slice(-4)]
+    );
+  }
+
+  // Link buyer_id on deal so buyer always sees it in their dashboard
+  if (buyerUser?.id) {
+    await q("update deals set buyer_id=$1 where id=$2", [buyerUser.id, deal.id]);
+    deal.buyer_id = buyerUser.id;
+  }
+
   const updated = await applyPayment(deal, { paymentMethod, senderNumber, trxId });
-  res.json(await view(updated, req.user));
+  const viewData = await view(updated, req.user || buyerUser);
+
+  // If visitor was not logged in, return JWT token so they are immediately authenticated as the buyer!
+  const token = req.user ? null : makeToken(buyerUser.id);
+
+  res.json({
+    ...viewData,
+    token,
+  });
+});
+
+/** Delete unpaid deal (Seller or Admin only, before payment is deposited) */
+router.delete("/:code", auth, async (req, res) => {
+  const deal = await loadDeal(req.params.code);
+  const isAdminUser = config.adminPhones.includes(req.user.phone);
+  if (deal.seller_id !== req.user.id && !isAdminUser) {
+    fail(403, "Only the creator of this deal can delete it");
+  }
+
+  if (!["created", "payment_pending"].includes(deal.status)) {
+    fail(400, "টাকা এসক্রোতে জমা হওয়ার পর ডিল ডিলিট করা যাবে না। (Cannot delete deal after escrow payment is made)");
+  }
+
+  // Cascade delete child records
+  await q("delete from tracking_events where deal_id = $1", [deal.id]);
+  await q("delete from deal_events where deal_id = $1", [deal.id]);
+  await q("delete from ledger where deal_id = $1", [deal.id]);
+  await q("delete from disputes where deal_id = $1", [deal.id]);
+  await q("delete from notifications where deal_code = $1", [deal.code]);
+  await q("delete from deals where id = $1", [deal.id]);
+
+  res.json({ ok: true, message: `Deal #${deal.code} deleted successfully` });
+});
+
+router.post("/:code/delete", auth, async (req, res) => {
+  const deal = await loadDeal(req.params.code);
+  const isAdminUser = config.adminPhones.includes(req.user.phone);
+  if (deal.seller_id !== req.user.id && !isAdminUser) {
+    fail(403, "Only the creator of this deal can delete it");
+  }
+
+  if (!["created", "payment_pending"].includes(deal.status)) {
+    fail(400, "টাকা এসক্রোতে জমা হওয়ার পর ডিল ডিলিট করা যাবে না। (Cannot delete deal after escrow payment is made)");
+  }
+
+  await q("delete from tracking_events where deal_id = $1", [deal.id]);
+  await q("delete from deal_events where deal_id = $1", [deal.id]);
+  await q("delete from ledger where deal_id = $1", [deal.id]);
+  await q("delete from disputes where deal_id = $1", [deal.id]);
+  await q("delete from notifications where deal_code = $1", [deal.code]);
+  await q("delete from deals where id = $1", [deal.id]);
+
+  res.json({ ok: true, message: `Deal #${deal.code} deleted successfully` });
 });
 
 router.post("/:code/ship", auth, upload.single("consignment_slip"), async (req, res) => {
@@ -270,12 +416,35 @@ router.post("/:code/ship", auth, upload.single("consignment_slip"), async (req, 
   if (deal.seller_id !== req.user.id) fail(403, "Not your deal");
   if (deal.status !== "held") fail(400, "Deal is not in held status");
 
-  const trackingId = (req.body.tracking_id || "").trim();
-  const courierName = (req.body.courier_name || deal.courier_name || "Steadfast").trim();
+  let trackingId = (req.body.tracking_id || req.body.trackingId || "").trim();
+  let courierName = (req.body.courier_name || req.body.courier || "").trim();
+  let detectionConfidence = 0;
+  let trackingSource = "api";
+
+  // If courier name wasn't explicitly provided, run the detection engine on trackingId
+  if (!courierName && trackingId) {
+    const detection = detectCourier(trackingId);
+    if (detection?.detectedCourier) {
+      courierName = detection.detectedCourier;
+      detectionConfidence = detection.detectionConfidence;
+    }
+  }
+
+  if (!courierName) {
+    courierName = deal.courier_name || "Steadfast";
+  }
+
   const courierPhone = (req.body.courier_phone || "").trim();
-  const isManualCourier = courierName.toLowerCase() === "other" || req.body.is_manual_courier === "1" || req.body.is_manual_courier === true;
+  const lowerName = courierName.toLowerCase();
+  const isManualCourier =
+    lowerName === "other" ||
+    lowerName === "sundarban" ||
+    lowerName === "sa paribahan" ||
+    req.body.is_manual_courier === "1" ||
+    req.body.is_manual_courier === true;
 
   if (isManualCourier) {
+    trackingSource = "manual";
     if (!courierPhone) fail(400, "Please provide courier contact phone number for manual tracking");
     if (!req.file) fail(400, "Please upload consignment slip photo for manual courier audit");
   } else {
@@ -294,7 +463,24 @@ router.post("/:code/ship", auth, upload.single("consignment_slip"), async (req, 
     consignmentSlipType,
   });
 
-  res.json(await view(updated, req.user));
+  // Store detection confidence and tracking source
+  await q(
+    `update deals set detection_confidence=$2, tracking_source=$3 where id=$1`,
+    [updated.id, detectionConfidence, trackingSource]
+  );
+
+  // Initialize/sync normalized tracking timeline
+  await updateDealTracking(updated, trackingSource);
+
+  const refreshed = await loadDeal(req.params.code);
+  res.json(await view(refreshed, req.user));
+});
+
+router.get("/:code/tracking", optionalAuth, async (req, res) => {
+  const deal = await loadDeal(req.params.code);
+  const tracking = await getDealTrackingTimeline(deal.id);
+  if (!tracking) fail(404, "Tracking timeline not available for this deal");
+  res.json(tracking);
 });
 
 router.post("/:code/confirm", auth, upload.single("unboxing_photo"), async (req, res) => {

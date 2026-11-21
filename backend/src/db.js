@@ -68,7 +68,11 @@ export const q = async (text, params = []) => {
       return [{ ...res, id: res.lastInsertRowid }];
     }
   } else {
-    return (await pgPool.query(text, params)).rows;
+    const pgSql = text
+      .replace(/datetime\('now'\)/gi, "now()")
+      .replace(/datetime\('now',\s*'-(\d+)\s*(minutes|hours|days)'\)/gi, "now() - interval '$1 $2'")
+      .replace(/datetime\('now',\s*'\+(\d+)\s*(minutes|hours|days)'\)/gi, "now() + interval '$1 $2'");
+    return (await pgPool.query(pgSql, params)).rows;
   }
 };
 
@@ -226,8 +230,58 @@ export async function initDb() {
         value text not null,
         description text not null default ''
       );
+
+      create table if not exists tracking_events (
+        id integer primary key autoincrement,
+        deal_id int not null,
+        tracking_id text not null default '',
+        courier text not null default '',
+        standardized_status text not null,
+        original_status text not null default '',
+        location text not null default '',
+        note text not null default '',
+        occurred_at text not null default (datetime('now')),
+        created_at text not null default (datetime('now'))
+      );
+      create index if not exists tracking_events_deal_idx on tracking_events(deal_id);
     `);
   } else {
+    // Ensure PostgreSQL supports datetime('now') and datetime('now', '-15 minutes') as fallback
+    try {
+      await pgPool.query(`
+        CREATE OR REPLACE FUNCTION datetime(timestr text) RETURNS timestamptz AS $$
+        BEGIN
+          IF timestr = 'now' THEN
+            RETURN now();
+          ELSE
+            RETURN timestr::timestamptz;
+          END IF;
+        END;
+        $$ LANGUAGE plpgsql;
+
+        CREATE OR REPLACE FUNCTION datetime(timestr text, modifier text) RETURNS timestamptz AS $$
+        DECLARE
+          base_time timestamptz;
+          mod_str text;
+        BEGIN
+          IF timestr = 'now' THEN
+            base_time := now();
+          ELSE
+            base_time := timestr::timestamptz;
+          END IF;
+          mod_str := trim(replace(modifier, '+', ''));
+          IF mod_str LIKE '-%' THEN
+            RETURN base_time - substring(mod_str from 2)::interval;
+          ELSE
+            RETURN base_time + mod_str::interval;
+          END IF;
+        EXCEPTION WHEN OTHERS THEN
+          RETURN base_time;
+        END;
+        $$ LANGUAGE plpgsql;
+      `);
+    } catch (_compatErr) {}
+
     await pgPool.query(`
       create table if not exists users (
         id serial primary key,
@@ -366,6 +420,20 @@ export async function initDb() {
         value text not null,
         description text not null default ''
       );
+
+      create table if not exists tracking_events (
+        id serial primary key,
+        deal_id int not null references deals(id),
+        tracking_id text not null default '',
+        courier text not null default '',
+        standardized_status text not null,
+        original_status text not null default '',
+        location text not null default '',
+        note text not null default '',
+        occurred_at timestamptz not null default now(),
+        created_at timestamptz not null default now()
+      );
+      create index if not exists tracking_events_deal_idx on tracking_events(deal_id);
     `);
   }
 
@@ -418,12 +486,40 @@ async function runMigrations() {
         ["auto_release_paused", "int not null default 0"],
         ["unboxing_photo", "blob"],
         ["unboxing_photo_type", "text not null default ''"],
+        ["detection_confidence", "int not null default 0"],
+        ["tracking_source", "text not null default 'api'"],
+        ["standardized_status", "text not null default ''"],
+        ["raw_courier_status", "text not null default ''"],
+        ["current_location", "text not null default ''"],
+        ["estimated_delivery_at", "text"],
+        ["last_tracking_update", "text"],
+        ["last_polled_at", "text"],
+        ["poll_failure_count", "int not null default 0"],
+        ["created_at", "text not null default (datetime('now'))"],
+        ["updated_at", "text not null default (datetime('now'))"],
+        ["buyer_id", "int"],
       ];
       for (const [col, colType] of neededDealCols) {
         if (!dealCols.includes(col)) {
           db.exec(`alter table deals add column ${col} ${colType}`);
         }
       }
+
+      db.exec(`
+        create table if not exists tracking_events (
+          id integer primary key autoincrement,
+          deal_id int not null,
+          tracking_id text not null default '',
+          courier text not null default '',
+          standardized_status text not null,
+          original_status text not null default '',
+          location text not null default '',
+          note text not null default '',
+          occurred_at text not null default (datetime('now')),
+          created_at text not null default (datetime('now'))
+        );
+        create index if not exists tracking_events_deal_idx on tracking_events(deal_id);
+      `);
 
       const eventCols = db.prepare("pragma table_info(deal_events)").all().map(c => c.name);
       const neededEventCols = [
@@ -467,6 +563,37 @@ async function runMigrations() {
         }
       }
 
+      const buyerCols = db.prepare("pragma table_info(buyer_stats)").all().map(c => c.name);
+      if (!buyerCols.includes("refunded")) {
+        db.exec("alter table buyer_stats add column refunded int not null default 0");
+      }
+      const sellerCols = db.prepare("pragma table_info(seller_stats)").all().map(c => c.name);
+      if (!sellerCols.includes("refunded")) {
+        db.exec("alter table seller_stats add column refunded int not null default 0");
+      }
+
+      const notifCols = db.prepare("pragma table_info(notifications)").all().map(c => c.name);
+      if (!notifCols.includes("title")) {
+        db.exec("alter table notifications add column title text not null default 'PakkaDeal Update'");
+      }
+      if (!notifCols.includes("deal_code")) {
+        db.exec("alter table notifications add column deal_code text not null default ''");
+      }
+      if (!notifCols.includes("is_read")) {
+        db.exec("alter table notifications add column is_read int not null default 0");
+      }
+
+      const ledgerCols = db.prepare("pragma table_info(ledger)").all().map(c => c.name);
+      if (!ledgerCols.includes("party_phone")) {
+        db.exec("alter table ledger add column party_phone text not null default ''");
+      }
+      if (!ledgerCols.includes("balance_after")) {
+        db.exec("alter table ledger add column balance_after int not null default 0");
+      }
+      if (!ledgerCols.includes("notes")) {
+        db.exec("alter table ledger add column notes text not null default ''");
+      }
+
       db.exec(`update deals set seller_payout = max(total_amount - fee_amount, 0) where (seller_payout is null or seller_payout = 0) and total_amount > 0`);
     } else if (pgPool) {
       const neededDealCols = [
@@ -505,10 +632,42 @@ async function runMigrations() {
         ["auto_release_paused", "int not null default 0"],
         ["unboxing_photo", "bytea"],
         ["unboxing_photo_type", "text not null default ''"],
+        ["detection_confidence", "int not null default 0"],
+        ["tracking_source", "text not null default 'api'"],
+        ["standardized_status", "text not null default ''"],
+        ["raw_courier_status", "text not null default ''"],
+        ["current_location", "text not null default ''"],
+        ["estimated_delivery_at", "timestamptz"],
+        ["last_tracking_update", "timestamptz"],
+        ["last_polled_at", "timestamptz"],
+        ["poll_failure_count", "int not null default 0"],
+        ["created_at", "timestamptz not null default now()"],
+        ["updated_at", "timestamptz not null default now()"],
+        ["buyer_id", "int"],
       ];
       for (const [col, colType] of neededDealCols) {
         await pgPool.query(`alter table deals add column if not exists ${col} ${colType}`);
       }
+
+      await pgPool.query(`alter table deals add column if not exists updated_at timestamptz not null default now()`);
+      await pgPool.query(`alter table deals add column if not exists created_at timestamptz not null default now()`);
+      await pgPool.query(`alter table deals add column if not exists buyer_id int`);
+
+      await pgPool.query(`
+        create table if not exists tracking_events (
+          id serial primary key,
+          deal_id int not null references deals(id),
+          tracking_id text not null default '',
+          courier text not null default '',
+          standardized_status text not null,
+          original_status text not null default '',
+          location text not null default '',
+          note text not null default '',
+          occurred_at timestamptz not null default now(),
+          created_at timestamptz not null default now()
+        );
+        create index if not exists tracking_events_deal_idx on tracking_events(deal_id);
+      `);
 
       const neededEventCols = [
         ["from_status", "text not null default ''"],
@@ -542,6 +701,26 @@ async function runMigrations() {
       for (const [col, colType] of neededDisputeCols) {
         await pgPool.query(`alter table disputes add column if not exists ${col} ${colType}`);
       }
+
+      await pgPool.query(`alter table buyer_stats add column if not exists refunded int not null default 0`);
+      await pgPool.query(`alter table buyer_stats add column if not exists disputes int not null default 0`);
+      await pgPool.query(`alter table buyer_stats add column if not exists delivered int not null default 0`);
+      await pgPool.query(`alter table buyer_stats add column if not exists refused int not null default 0`);
+      await pgPool.query(`alter table buyer_stats add column if not exists trust_score int not null default 60`);
+
+      await pgPool.query(`alter table seller_stats add column if not exists refunded int not null default 0`);
+      await pgPool.query(`alter table seller_stats add column if not exists disputes int not null default 0`);
+      await pgPool.query(`alter table seller_stats add column if not exists completed int not null default 0`);
+      await pgPool.query(`alter table seller_stats add column if not exists refused int not null default 0`);
+      await pgPool.query(`alter table seller_stats add column if not exists trust_score int not null default 70`);
+
+      await pgPool.query(`alter table notifications add column if not exists title text not null default 'PakkaDeal Update'`);
+      await pgPool.query(`alter table notifications add column if not exists deal_code text not null default ''`);
+      await pgPool.query(`alter table notifications add column if not exists is_read int not null default 0`);
+
+      await pgPool.query(`alter table ledger add column if not exists party_phone text not null default ''`);
+      await pgPool.query(`alter table ledger add column if not exists balance_after int not null default 0`);
+      await pgPool.query(`alter table ledger add column if not exists notes text not null default ''`);
 
       await pgPool.query(`update deals set seller_payout = greatest(total_amount - fee_amount, 0) where (seller_payout is null or seller_payout = 0) and total_amount > 0`);
     }

@@ -63,7 +63,7 @@ router.post("/deals/:code/dispute", auth, upload.single("photo"), async (req, re
     ]
   );
 
-  await q(`update deals set status='disputed', outcome='disputed', updated_at=datetime('now') where id=$1`, [deal.id]);
+  await q(`update deals set status='disputed', outcome='disputed', updated_at=CURRENT_TIMESTAMP where id=$1`, [deal.id]);
   await log(deal.id, "disputed", `Dispute opened by ${isBuyer ? "Buyer" : "Seller"}: ${reason}`);
   await notify(
     deal.buyer_phone,
@@ -122,7 +122,7 @@ router.post("/disputes/:id/decide", auth, adminOnly, async (req, res) => {
   if (isUpheld) {
     // Buyer refunded full amount (or full minus delivery depending on dispute reason)
     const refundAmount = deal.total_amount;
-    await q(`update deals set status='refunded', outcome='dispute_upheld', updated_at=datetime('now') where id=$1`, [deal.id]);
+    await q(`update deals set status='refunded', outcome='dispute_upheld', updated_at=CURRENT_TIMESTAMP where id=$1`, [deal.id]);
     await addLedger({
       dealId: deal.id,
       type: "refund_buyer",
@@ -139,7 +139,7 @@ router.post("/disputes/:id/decide", auth, adminOnly, async (req, res) => {
     const payout = deal.seller_payout || (deal.total_amount - deal.fee_amount);
     const fee = deal.fee_amount || Math.max(10, Math.round(deal.total_amount * 0.02));
 
-    await q(`update deals set status='released', outcome='dispute_rejected', updated_at=datetime('now') where id=$1`, [deal.id]);
+    await q(`update deals set status='released', outcome='dispute_rejected', updated_at=CURRENT_TIMESTAMP where id=$1`, [deal.id]);
     await addLedger({
       dealId: deal.id,
       type: "payout_seller",

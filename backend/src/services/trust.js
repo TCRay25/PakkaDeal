@@ -1,10 +1,31 @@
 import { one, q } from "../db.js";
 
 export async function getBuyer(phone) {
-  let b = await one("select * from buyer_stats where phone=$1", [phone]);
-  if (!b) {
-    await q("insert into buyer_stats(phone, delivered, refused, disputes, refunded, trust_score) values($1, 0, 0, 0, 0, 60)", [phone]);
+  let b = null;
+  try {
     b = await one("select * from buyer_stats where phone=$1", [phone]);
+  } catch (err) {
+    if (err.message && err.message.includes("refunded")) {
+      await q("alter table buyer_stats add column if not exists refunded int not null default 0").catch(() => {});
+      b = await one("select * from buyer_stats where phone=$1", [phone]);
+    } else {
+      throw err;
+    }
+  }
+
+  if (!b) {
+    try {
+      await q("insert into buyer_stats(phone, delivered, refused, disputes, refunded, trust_score) values($1, 0, 0, 0, 0, 60)", [phone]);
+      b = await one("select * from buyer_stats where phone=$1", [phone]);
+    } catch (insertErr) {
+      if (insertErr.message && insertErr.message.includes("refunded")) {
+        await q("alter table buyer_stats add column if not exists refunded int not null default 0").catch(() => {});
+        await q("insert into buyer_stats(phone, delivered, refused, disputes, refunded, trust_score) values($1, 0, 0, 0, 0, 60)", [phone]);
+        b = await one("select * from buyer_stats where phone=$1", [phone]);
+      } else {
+        throw insertErr;
+      }
+    }
   }
   return b;
 }
@@ -30,10 +51,31 @@ export async function bumpBuyer(phone, field) {
 }
 
 export async function bumpSeller(userId, field) {
-  let s = await one("select * from seller_stats where user_id=$1", [userId]);
-  if (!s) {
-    await q("insert into seller_stats(user_id, completed, refused, disputes, refunded, trust_score) values($1, 0, 0, 0, 0, 70)", [userId]);
+  let s = null;
+  try {
     s = await one("select * from seller_stats where user_id=$1", [userId]);
+  } catch (err) {
+    if (err.message && err.message.includes("refunded")) {
+      await q("alter table seller_stats add column if not exists refunded int not null default 0").catch(() => {});
+      s = await one("select * from seller_stats where user_id=$1", [userId]);
+    } else {
+      throw err;
+    }
+  }
+
+  if (!s) {
+    try {
+      await q("insert into seller_stats(user_id, completed, refused, disputes, refunded, trust_score) values($1, 0, 0, 0, 0, 70)", [userId]);
+      s = await one("select * from seller_stats where user_id=$1", [userId]);
+    } catch (insertErr) {
+      if (insertErr.message && insertErr.message.includes("refunded")) {
+        await q("alter table seller_stats add column if not exists refunded int not null default 0").catch(() => {});
+        await q("insert into seller_stats(user_id, completed, refused, disputes, refunded, trust_score) values($1, 0, 0, 0, 0, 70)", [userId]);
+        s = await one("select * from seller_stats where user_id=$1", [userId]);
+      } else {
+        throw insertErr;
+      }
+    }
   }
   const current = s[field] || 0;
   const next = { ...s, [field]: current + 1 };

@@ -61,7 +61,7 @@ export async function applyPayment(deal, paymentOpts = "bKash") {
 
   await q(
     `update deals set
-       status='held', deposit=$2, ship_by=$3, payment_method=$4, payment_sender=$5, payment_trx_id=$6, updated_at=datetime('now')
+       status='held', deposit=$2, ship_by=$3, payment_method=$4, payment_sender=$5, payment_trx_id=$6, updated_at=CURRENT_TIMESTAMP
      where id=$1`,
     [deal.id, deal.total_amount, shipBy, paymentMethod, senderNumber, trxId]
   );
@@ -145,7 +145,7 @@ export async function applyShip(deal, courierArg, trackingArg, extraOpts = {}) {
        consignment_slip_type=$7,
        manual_audit_status=$8,
        risk_score=$9,
-       updated_at=datetime('now')
+       updated_at=CURRENT_TIMESTAMP
      where id=$1`,
     [
       deal.id,
@@ -191,7 +191,7 @@ export async function applyCourier(deal, status) {
     if (status === "delivered") {
       return completeReturn(deal, "courier");
     }
-    await q("update deals set return_courier_status=$1, updated_at=datetime('now') where id=$2", [status, deal.id]);
+    await q("update deals set return_courier_status=$1, updated_at=CURRENT_TIMESTAMP where id=$2", [status, deal.id]);
     await log(deal.id, "return_tracking", `Return courier status: ${status}`, {
       fromStatus: deal.status,
       toStatus: deal.status,
@@ -202,7 +202,7 @@ export async function applyCourier(deal, status) {
 
   // Normal outbound delivery flow
   if (status === "picked_up" || status === "in_transit") {
-    await q("update deals set status='in_transit', courier_status=$1, updated_at=datetime('now') where id=$2", [status, deal.id]);
+    await q("update deals set status='in_transit', courier_status=$1, updated_at=CURRENT_TIMESTAMP where id=$2", [status, deal.id]);
     await log(deal.id, "in_transit", `Courier tracking update: ${status.replace("_", " ")}`, {
       fromStatus: deal.status,
       toStatus: "in_transit",
@@ -223,7 +223,7 @@ export async function applyCourier(deal, status) {
          confirm_by=$2,
          auto_release_at=$2,
          auto_release_paused=0,
-         updated_at=datetime('now')
+         updated_at=CURRENT_TIMESTAMP
        where id=$1`,
       [deal.id, autoReleaseAt]
     );
@@ -259,7 +259,7 @@ export async function applyCourier(deal, status) {
   if (status === "refused" || status === "returned") {
     // Buyer refused parcel at doorstep
     await q(
-      `update deals set status='released', outcome='refused_at_door', courier_status='refused', updated_at=datetime('now') where id=$1`,
+      `update deals set status='released', outcome='refused_at_door', courier_status='refused', updated_at=CURRENT_TIMESTAMP where id=$1`,
       [deal.id]
     );
 
@@ -338,7 +338,7 @@ export async function releaseToSeller(deal, outcome = "buyer_confirmed", actor =
        auto_release_paused=1,
        unboxing_photo=coalesce($3, unboxing_photo),
        unboxing_photo_type=case when $3 is not null then $4 else unboxing_photo_type end,
-       updated_at=datetime('now')
+       updated_at=CURRENT_TIMESTAMP
      where id=$1`,
     [deal.id, outcome, unboxingPhoto, unboxingPhotoType]
   );
@@ -396,7 +396,7 @@ export async function requestReturn(deal, reason, actor = "buyer") {
        status='return_requested',
        outcome='return_requested',
        auto_release_paused=1,
-       updated_at=datetime('now')
+       updated_at=CURRENT_TIMESTAMP
      where id=$1`,
     [deal.id]
   );
@@ -434,7 +434,7 @@ export async function shipReturn(deal, courierName, trackingId, actor = "buyer")
        return_courier_name=$2,
        return_tracking_id=$3,
        return_courier_status='in_transit',
-       updated_at=datetime('now')
+       updated_at=CURRENT_TIMESTAMP
      where id=$1`,
     [deal.id, courierName, trackingId]
   );
@@ -471,7 +471,7 @@ export async function completeReturn(deal, actor = "seller") {
        status='refunded',
        outcome='return_received',
        auto_release_paused=1,
-       updated_at=datetime('now')
+       updated_at=CURRENT_TIMESTAMP
      where id=$1`,
     [deal.id]
   );
@@ -541,7 +541,7 @@ export async function applyHandoverConfirmation(deal, user) {
   if (isBuyer) buyerConfirmed = 1;
 
   await q(
-    `update deals set seller_confirmed=$2, buyer_confirmed=$3, updated_at=datetime('now') where id=$1`,
+    `update deals set seller_confirmed=$2, buyer_confirmed=$3, updated_at=CURRENT_TIMESTAMP where id=$1`,
     [deal.id, sellerConfirmed, buyerConfirmed]
   );
 
@@ -576,7 +576,7 @@ export async function adminForceRelease(deal, adminNotes = "", actor = "admin") 
   const fee = deal.fee_amount || Math.max(10, Math.round(deal.total_amount * 0.02));
 
   await q(
-    `update deals set status='released', outcome='admin_forced_release', auto_release_paused=1, updated_at=datetime('now') where id=$1`,
+    `update deals set status='released', outcome='admin_forced_release', auto_release_paused=1, updated_at=CURRENT_TIMESTAMP where id=$1`,
     [deal.id]
   );
 
@@ -613,7 +613,7 @@ export async function adminForceRefund(deal, adminNotes = "", actor = "admin") {
   const refundAmount = deal.total_amount;
 
   await q(
-    `update deals set status='refunded', outcome='admin_forced_refund', auto_release_paused=1, updated_at=datetime('now') where id=$1`,
+    `update deals set status='refunded', outcome='admin_forced_refund', auto_release_paused=1, updated_at=CURRENT_TIMESTAMP where id=$1`,
     [deal.id]
   );
 
@@ -642,7 +642,7 @@ export async function adminForceRefund(deal, adminNotes = "", actor = "admin") {
 /** Admin Split Resolution */
 export async function adminSplitResolution(deal, sellerAmount, buyerAmount, adminNotes = "", actor = "admin") {
   await q(
-    `update deals set status='released', outcome='admin_split_resolution', auto_release_paused=1, updated_at=datetime('now') where id=$1`,
+    `update deals set status='released', outcome='admin_split_resolution', auto_release_paused=1, updated_at=CURRENT_TIMESTAMP where id=$1`,
     [deal.id]
   );
 
@@ -688,7 +688,7 @@ export async function checkAllTimeouts() {
   );
   for (const deal of lateDeals) {
     await q(
-      `update deals set status='refunded', outcome='seller_ship_timeout', updated_at=datetime('now') where id=$1`,
+      `update deals set status='refunded', outcome='seller_ship_timeout', updated_at=CURRENT_TIMESTAMP where id=$1`,
       [deal.id]
     );
     await addLedger({

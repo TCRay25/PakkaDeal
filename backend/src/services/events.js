@@ -27,11 +27,25 @@ export async function log(dealId, kind, note = "", meta = {}) {
  */
 export async function notify(phone, message, title = "PakkaDeal Update", dealCode = "") {
   // 1. In-app notification record
-  await q(
-    `insert into notifications(phone, title, message, deal_code)
-     values($1, $2, $3, $4)`,
-    [phone, title, message, dealCode]
-  );
+  try {
+    await q(
+      `insert into notifications(phone, title, message, deal_code)
+       values($1, $2, $3, $4)`,
+      [phone, title, message, dealCode]
+    );
+  } catch (err) {
+    if (err.message && (err.message.includes("title") || err.message.includes("deal_code"))) {
+      await q("alter table notifications add column if not exists title text not null default 'PakkaDeal Update'").catch(() => {});
+      await q("alter table notifications add column if not exists deal_code text not null default ''").catch(() => {});
+      await q(
+        `insert into notifications(phone, title, message, deal_code)
+         values($1, $2, $3, $4)`,
+        [phone, title, message, dealCode]
+      ).catch(() => {});
+    } else {
+      console.warn("Notification insert error:", err.message);
+    }
+  }
 
   // 2. Simulated email / SMS notification dispatcher
   const simulatedEmail = `${phone.replace(/\D/g, "")}@user.pakkadeal.com`;

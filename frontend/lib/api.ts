@@ -89,6 +89,14 @@ export type Deal = {
   courier_phone?: string;
   has_consignment_slip?: boolean;
   manual_audit_status?: string;
+  detection_confidence?: number;
+  tracking_source?: "api" | "webhook" | "manual";
+  standardized_status?: string;
+  raw_courier_status?: string;
+  current_location?: string;
+  estimated_delivery_at?: string | null;
+  last_tracking_update?: string;
+  poll_failure_count?: number;
   auto_release_at?: string | null;
   auto_release_paused?: number;
   has_unboxing_photo?: boolean;
@@ -97,6 +105,42 @@ export type Deal = {
   page_name?: string;
   seller_name?: string;
   seller_phone?: string;
+};
+
+export type TrackingEvent = {
+  id: number;
+  deal_id: number;
+  tracking_id: string;
+  courier: string;
+  standardized_status: string;
+  original_status: string;
+  location: string;
+  note: string;
+  occurred_at: string;
+  created_at: string;
+};
+
+export type TrackingData = {
+  dealId: number;
+  dealCode: string;
+  product: string;
+  courierName: string;
+  courierCode: string;
+  trackingId: string;
+  hasApi: boolean;
+  manualTrackingUrl?: string | null;
+  isManualCourier: boolean;
+  courierPhone?: string;
+  detectionConfidence: number;
+  trackingSource: "api" | "webhook" | "manual";
+  standardizedStatus: string;
+  rawCourierStatus: string;
+  currentLocation: string;
+  estimatedDeliveryAt?: string | null;
+  lastTrackingUpdate: string;
+  hasConsignmentSlip: boolean;
+  manualAuditStatus?: string;
+  events: TrackingEvent[];
 };
 
 export type DealDetailResponse = {
@@ -143,6 +187,7 @@ export type DealDetailResponse = {
     status: string;
     created_at: string;
   } | null;
+  tracking?: TrackingData | null;
   me: {
     is_seller: boolean;
     is_buyer: boolean;

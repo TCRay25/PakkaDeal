@@ -7,11 +7,12 @@ import { useAuth } from "@/lib/auth";
 import StatusBadge from "@/components/StatusBadge";
 
 export default function DealsListPage() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { user } = useAuth();
   const [deals, setDeals] = useState<Deal[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<string>("all");
+  const [roleFilter, setRoleFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [search, setSearch] = useState<string>("");
 
@@ -20,6 +21,7 @@ export default function DealsListPage() {
     let url = "/deals";
     const params = new URLSearchParams();
     if (activeTab !== "all") params.set("status", activeTab);
+    if (roleFilter !== "all") params.set("role", roleFilter);
     if (typeFilter !== "all") params.set("type", typeFilter);
     if (search.trim()) params.set("q", search.trim());
     if (params.toString()) url += "?" + params.toString();
@@ -32,11 +34,21 @@ export default function DealsListPage() {
 
   useEffect(() => {
     loadDeals();
-  }, [activeTab, typeFilter]);
+  }, [activeTab, roleFilter, typeFilter]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     loadDeals();
+  };
+
+  const handleDeleteDeal = async (code: string) => {
+    if (!confirm(lang === "bn" ? "আপনি কি নিশ্চিত যে এই আনপেইড ডিলটি ডিলিট করতে চান?" : "Are you sure you want to delete this unpaid deal?")) return;
+    try {
+      await api(`/deals/${code}`, { method: "DELETE" });
+      loadDeals();
+    } catch (e: any) {
+      alert(e.message || "Failed to delete deal");
+    }
   };
 
   if (!user) return null;
@@ -53,7 +65,37 @@ export default function DealsListPage() {
         </Link>
       </div>
 
-      {/* Tabs and Filters */}
+      {/* Role Filter Tabs (All / My Sales / My Purchases) */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-200 dark:border-neutral-800 pb-3">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-bold uppercase text-neutral-500 mr-1">
+            {lang === "bn" ? "ভূমিকা:" : "Role:"}
+          </span>
+          {[
+            { id: "all", label: lang === "bn" ? "সকল ডিল (All)" : "All Transactions" },
+            { id: "seller", label: lang === "bn" ? "আমার বিক্রয় (Seller)" : "My Sales (Seller)" },
+            { id: "buyer", label: lang === "bn" ? "আমার অর্ডার (Buyer)" : "My Purchases (Buyer)" },
+          ].map((r) => (
+            <button
+              key={r.id}
+              onClick={() => setRoleFilter(r.id)}
+              className={`px-3 py-1 text-xs font-bold border transition-colors ${
+                roleFilter === r.id
+                  ? "border-accent bg-accent text-white"
+                  : "border-neutral-300 dark:border-neutral-700 hover:border-neutral-500 text-neutral-600 dark:text-neutral-400"
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+
+        <span className="text-xs text-neutral-500 font-mono">
+          {deals.length} {lang === "bn" ? "টি লেনদেন" : "Deals"}
+        </span>
+      </div>
+
+      {/* Status Tabs and Filters */}
       <div className="flex flex-col lg:flex-row gap-4 items-stretch lg:items-center justify-between">
         <div className="flex flex-wrap gap-1 border-b lg:border-b-0 border-neutral-200 dark:border-neutral-800 pb-2 lg:pb-0">
           {[
@@ -134,17 +176,17 @@ export default function DealsListPage() {
 
                 const getNextAction = (s: string) => {
                   const st = s.toLowerCase();
-                  if (st === "created") return isCreator ? "Share link with buyer" : "Deposit into escrow";
-                  if (st === "payment_pending") return isCreator ? "Buyer viewed link, awaiting payment" : "Deposit into escrow vault";
-                  if (st === "held" || st === "escrow_held") return isCreator ? "Buyer paid! Ship parcel now" : "Escrow held, seller shipping";
-                  if (st === "shipped" || st === "in_transit") return isCreator ? "In transit to buyer" : "Track shipment arrival";
-                  if (st === "delivered") return isCreator ? "24h auto-release countdown active" : "Inspect item & confirm receipt";
-                  if (st === "return_requested") return isCreator ? "Buyer requested return" : "Ship return parcel";
-                  if (st === "return_shipped") return isCreator ? "Confirm return delivery" : "Return in transit";
-                  if (st === "disputed") return "Dispute under review";
-                  if (st === "released") return "Funds released";
-                  if (st === "refunded") return "Refunded";
-                  return "View details";
+                  if (st === "created") return isCreator ? (lang === "bn" ? "বায়ারকে লিংক পাঠান" : "Share link with buyer") : (lang === "bn" ? "এসক্রোতে টাকা জমা দিন" : "Deposit into escrow");
+                  if (st === "payment_pending") return isCreator ? (lang === "bn" ? "বায়ার লিংক দেখেছে, পেমেন্টের অপেক্ষায়" : "Buyer viewed link, awaiting payment") : (lang === "bn" ? "এসক্রো ভল্টে পে করুন" : "Deposit into escrow vault");
+                  if (st === "held" || st === "escrow_held") return isCreator ? (lang === "bn" ? "বায়ার পেমেন্ট করেছে! পার্সেল পাঠান" : "Buyer paid! Ship parcel now") : (lang === "bn" ? "এসক্রোতে টাকা জমা, বিক্রেতা শিপ করছে" : "Escrow held, seller shipping");
+                  if (st === "shipped" || st === "in_transit") return isCreator ? (lang === "bn" ? "পার্সেল ট্রানজিটে আছে" : "In transit to buyer") : (lang === "bn" ? "কুরিয়ার ট্র্যাক করুন" : "Track shipment arrival");
+                  if (st === "delivered") return isCreator ? (lang === "bn" ? "২৪ ঘণ্টার অটো-রিলিজ কাউন্টডাউন চলছে" : "24h auto-release countdown active") : (lang === "bn" ? "পণ্য যাচাই করে রসিদ কনফার্ম করুন" : "Inspect item & confirm receipt");
+                  if (st === "return_requested") return isCreator ? (lang === "bn" ? "বায়ার রিটার্ন চেয়েছেন" : "Buyer requested return") : (lang === "bn" ? "রিটার্ন পার্সেল পাঠান" : "Ship return parcel");
+                  if (st === "return_shipped") return isCreator ? (lang === "bn" ? "রিটার্ন রসিদ নিশ্চিত করুন" : "Confirm return delivery") : (lang === "bn" ? "রিটার্ন পথে আছে" : "Return in transit");
+                  if (st === "disputed") return lang === "bn" ? "বিরোধ পর্যালোচনাধীন" : "Dispute under review";
+                  if (st === "released") return lang === "bn" ? "বিক্রেতাকে টাকা পরিশোধিত" : "Funds released";
+                  if (st === "refunded") return lang === "bn" ? "রিফান্ড সম্পন্ন" : "Refunded";
+                  return lang === "bn" ? "বিবরণ দেখুন" : "View details";
                 };
 
                 return (
@@ -157,16 +199,22 @@ export default function DealsListPage() {
                       {deal.deal_type}
                     </td>
                     <td className="px-4 py-3 text-xs">
-                      {deal.seller_id === user.id ? (
-                        <>
-                          <div className="font-medium">{deal.buyer_name}</div>
-                          <div className="text-neutral-500 font-mono">{deal.buyer_phone}</div>
-                        </>
+                      {isCreator ? (
+                        <div>
+                          <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 mr-1.5 inline-block mb-1">
+                            {lang === "bn" ? "সেলার" : "Seller"}
+                          </span>
+                          <div className="font-medium text-neutral-900 dark:text-neutral-100">{deal.buyer_name}</div>
+                          <div className="text-neutral-500 font-mono text-[11px]">{deal.buyer_phone}</div>
+                        </div>
                       ) : (
-                        <>
-                          <div className="font-medium">{deal.page_name || deal.seller_name || "Creator"}</div>
-                          <div className="text-neutral-500 font-mono">ID #{deal.seller_id}</div>
-                        </>
+                        <div>
+                          <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 mr-1.5 inline-block mb-1">
+                            {lang === "bn" ? "বায়ার" : "Buyer"}
+                          </span>
+                          <div className="font-medium text-neutral-900 dark:text-neutral-100">{deal.page_name || deal.seller_name || "Seller"}</div>
+                          <div className="text-neutral-500 font-mono text-[11px]">{deal.seller_phone || `ID #${deal.seller_id}`}</div>
+                        </div>
                       )}
                     </td>
                     <td className="px-4 py-3 font-mono font-semibold">
@@ -182,9 +230,21 @@ export default function DealsListPage() {
                       {new Date(deal.created_at).toLocaleDateString()}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <Link href={`/deal/${deal.code}`} className="btn-ghost text-xs py-1 px-3">
-                        {t("open")}
-                      </Link>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <Link href={`/deal/${deal.code}`} className="btn-ghost text-xs py-1 px-2.5">
+                          {t("open")}
+                        </Link>
+                        {isCreator && (deal.status === "created" || deal.status === "payment_pending") && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteDeal(deal.code)}
+                            className="text-xs py-1 px-2 border border-rose-500/50 text-rose-600 hover:bg-rose-600 hover:text-white transition-colors"
+                            title={lang === "bn" ? "ডিল ডিলিট করুন" : "Delete Unpaid Deal"}
+                          >
+                            🗑️
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );

@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/auth";
 import StatusBadge from "@/components/StatusBadge";
 import Timeline from "@/components/Timeline";
 import MoneyBreakdown from "@/components/MoneyBreakdown";
+import TrackingTimeline from "@/components/TrackingTimeline";
 
 function useCountdown(targetIsoDate?: string | null, isPaused: boolean = false) {
   const [timeLeft, setTimeLeft] = useState<{ hours: number; minutes: number; seconds: number; expired: boolean } | null>(null);
@@ -59,12 +60,51 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
   const [showReturnModal, setShowReturnModal] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
-  // Form states - Shipping
+  // Form states - Shipping & Courier Detection
   const [courierName, setCourierName] = useState("Steadfast");
   const [customCourierName, setCustomCourierName] = useState("");
   const [courierPhone, setCourierPhone] = useState("");
   const [trackingId, setTrackingId] = useState("");
   const [consignmentSlip, setConsignmentSlip] = useState<File | null>(null);
+  const [detecting, setDetecting] = useState(false);
+  const [detectionResult, setDetectionResult] = useState<{
+    detectedCourier: string | null;
+    courierCode: string;
+    detectionConfidence: number;
+    isAmbiguous: boolean;
+    candidates: any[];
+  } | null>(null);
+  const [manualCourierMode, setManualCourierMode] = useState(false);
+
+  useEffect(() => {
+    const trimmed = trackingId.trim();
+    if (trimmed.length < 3) {
+      setDetectionResult(null);
+      setDetecting(false);
+      return;
+    }
+
+    setDetecting(true);
+    const timer = setTimeout(() => {
+      post("/shipments/detect", { trackingId: trimmed })
+        .then((res) => {
+          setDetectionResult(res);
+          if (res?.detectedCourier && res.detectionConfidence >= 70 && !res.isAmbiguous) {
+            setCourierName(res.detectedCourier);
+            setManualCourierMode(false);
+          } else {
+            setManualCourierMode(true);
+          }
+        })
+        .catch(() => {
+          setDetectionResult(null);
+          setManualCourierMode(true);
+        })
+        .finally(() => setDetecting(false));
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [trackingId]);
 
   // Form states - Confirm Receipt
   const [unboxingPhoto, setUnboxingPhoto] = useState<File | null>(null);
@@ -128,7 +168,16 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
   // Actions
   const handlePay = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!senderPhone.trim()) {
+    if (me?.is_seller) {
+      alert(
+        lang === "bn"
+          ? "বিক্রেতা হিসেবে আপনি নিজের তৈরি করা ডিলে পেমেন্ট করতে পারবেন না। পেমেন্ট শুধুমাত্র বায়ার (ক্রেতা) সম্পন্ন করবেন।"
+          : "Sellers cannot pay for their own deal. Only the buyer can pay into escrow."
+      );
+      return;
+    }
+    const effectiveSender = senderPhone.trim() || user?.phone || deal.buyer_phone;
+    if (!effectiveSender) {
       alert(t("enterSenderPhoneAlert"));
       return;
     }
@@ -138,11 +187,14 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
     }
     setSubmitting(true);
     try {
-      await post(`/deals/${deal.code}/pay`, {
+      const res: any = await post(`/deals/${deal.code}/pay`, {
         payment_method: payMethod,
-        sender_number: senderPhone.trim(),
+        sender_number: effectiveSender,
         trx_id: trxId.trim(),
       });
+      if (res?.token) {
+        localStorage.setItem("token", res.token);
+      }
       setShowPayModal(false);
       load();
     } catch (x: any) {
@@ -152,20 +204,46 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
     }
   };
 
+  const handleDeleteDeal = async () => {
+    if (
+      !confirm(
+        lang === "bn"
+          ? "আপনি কি নিশ্চিত যে এই আনপেইড ডিলটি ডিলিট করতে চান? একবার ডিলিট করলে এটি সম্পূর্ণ মুছে যাবে।"
+          : "Are you sure you want to delete this unpaid deal? This action cannot be undone."
+      )
+    ) {
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await api(`/deals/${deal.code}`, { method: "DELETE" });
+      router.push("/dashboard/deals");
+    } catch (x: any) {
+      alert(x.message || "Failed to delete deal");
+      setSubmitting(false);
+    }
+  };
+
   const handleShip = async (e: React.FormEvent) => {
     e.preventDefault();
-    const isOther = courierName === "Other";
-    const finalCourierName = isOther ? (customCourierName.trim() || "Other Courier") : courierName;
+    const finalCourierName = courierName === "Other" ? (customCourierName.trim() || "Other Courier") : courierName;
+    const lower = finalCourierName.toLowerCase();
+    const isManual =
+      lower === "other" ||
+      lower === "other courier" ||
+      lower.includes("sundarban") ||
+      lower.includes("sa paribahan") ||
+      lower.includes("s.a. paribahan");
 
-    if (isOther && !courierPhone.trim()) {
+    if (isManual && !courierPhone.trim()) {
       alert("Please enter the courier contact phone number");
       return;
     }
-    if (isOther && !consignmentSlip) {
+    if (isManual && !consignmentSlip) {
       alert("Please upload the consignment slip photo for manual courier audit");
       return;
     }
-    if (!isOther && trackingId.trim().length < 3) {
+    if (!isManual && trackingId.trim().length < 3) {
       alert("Please enter a valid courier tracking ID");
       return;
     }
@@ -176,7 +254,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
       formData.append("courier_name", finalCourierName);
       formData.append("tracking_id", trackingId.trim() || `MANUAL-${Date.now().toString(36).toUpperCase()}`);
       formData.append("courier_phone", courierPhone.trim());
-      formData.append("is_manual_courier", isOther ? "1" : "0");
+      formData.append("is_manual_courier", isManual ? "1" : "0");
       if (consignmentSlip) formData.append("consignment_slip", consignmentSlip);
 
       await post(`/deals/${deal.code}/ship`, formData);
@@ -412,22 +490,164 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
 
             {/* State: created or payment_pending */}
             {(deal.status === "created" || deal.status === "payment_pending") && (
-              <div className="space-y-3">
-                <p className="text-sm text-neutral-700 dark:text-neutral-300">
-                  {t("payHelp")}
-                </p>
-                {me.is_buyer ? (
-                  <button onClick={() => setShowPayModal(true)} className="btn w-full sm:w-auto text-base py-2.5 px-6">
-                    {t("payBtn")}
-                  </button>
-                ) : !user ? (
-                  <Link href="/login" className="btn text-xs">
-                    {t("loginToPay")}
-                  </Link>
+              <div className="space-y-4">
+                {me.is_seller ? (
+                  /* SELLER VIEW: Waiting for Buyer to Pay, Share Link, Cannot Pay Own Deal */
+                  <div className="p-6 border-2 border-amber-500/60 bg-amber-500/5 dark:bg-amber-950/20 space-y-5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-amber-500/30 pb-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 bg-amber-500 rounded-none animate-pulse" />
+                          <h3 className="text-sm font-extrabold uppercase tracking-wide text-amber-800 dark:text-amber-300">
+                            {lang === "bn" ? "🕒 বায়ারের পেমেন্টের জন্য অপেক্ষমাণ" : "🕒 Awaiting Buyer Payment into Escrow"}
+                          </h3>
+                        </div>
+                        <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-1">
+                          {lang === "bn"
+                            ? "আপনি এই ডিলের বিক্রেতা (Seller)। ক্রেতার এসক্রো ভল্টে টাকা জমার জন্য অপেক্ষা করা হচ্ছে।"
+                            : "You created this deal as the Seller. Waiting for the buyer to deposit funds into escrow."}
+                        </p>
+                      </div>
+
+                      <div className="text-left sm:text-right">
+                        <span className="text-[11px] text-neutral-500 block uppercase font-semibold">
+                          {lang === "bn" ? "প্রদেয় অর্থ" : "Vault Amount"}
+                        </span>
+                        <span className="text-xl font-mono font-extrabold text-neutral-900 dark:text-neutral-100">
+                          {deal.total_amount.toLocaleString()} BDT
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Counterparty Buyer Information */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 text-xs">
+                      <div>
+                        <span className="text-neutral-500 block text-[11px] font-medium">{t("buyer")}:</span>
+                        <span className="font-bold text-neutral-900 dark:text-neutral-100 text-sm">{deal.buyer_name}</span>
+                      </div>
+                      <div>
+                        <span className="text-neutral-500 block text-[11px] font-medium">{t("buyerPhone")}:</span>
+                        <span className="font-mono font-bold text-accent text-sm">{deal.buyer_phone}</span>
+                      </div>
+                    </div>
+
+                    {/* Share Deal Link with Buyer */}
+                    <div className="p-4 bg-white dark:bg-neutral-900 border-2 border-accent/40 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold uppercase tracking-wider text-accent flex items-center gap-1.5">
+                          🔗 {lang === "bn" ? "বায়ারকে পাঠানোর ডিল লিংক" : "Shareable Deal Link for Buyer"}
+                        </span>
+                        <span className="text-[11px] text-neutral-500">
+                          {lang === "bn" ? "বায়ার এই লিংক খুলে পেমেন্ট করবেন" : "Buyer opens this link to deposit"}
+                        </span>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={typeof window !== "undefined" ? window.location.href : ""}
+                          className="font-mono text-xs py-2 px-3 border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 flex-1 select-all"
+                          onClick={(e) => (e.target as HTMLInputElement).select()}
+                        />
+                        <button
+                          type="button"
+                          onClick={copyLink}
+                          className="btn text-xs py-2 px-4 shrink-0 font-bold"
+                        >
+                          📋 {msg || (lang === "bn" ? "লিংক কপি করুন" : "Copy Link")}
+                        </button>
+                        <a
+                          href={`https://wa.me/88${deal.buyer_phone.replace(/\D/g, "").slice(-11)}?text=${encodeURIComponent(
+                            lang === "bn"
+                              ? `আসসালামু আলাইকুম ${deal.buyer_name}, পাক্কাডিল এসক্রোতে আপনার "${deal.product}" অর্ডারের ডিল তৈরি হয়েছে। মোট পরিমাণ: ${deal.total_amount} BDT। অর্ডারটি নিশ্চিত করতে এসক্রোতে পেমেন্ট সম্পন্ন করুন: ${typeof window !== "undefined" ? window.location.href : ""}`
+                              : `Hello ${deal.buyer_name}, your escrow deal for "${deal.product}" is ready on PakkaDeal. Total: ${deal.total_amount} BDT. Please deposit into escrow to proceed: ${typeof window !== "undefined" ? window.location.href : ""}`
+                          )}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-1.5 shrink-0"
+                        >
+                          💬 WhatsApp
+                        </a>
+                      </div>
+
+                      <p className="text-[11px] text-neutral-600 dark:text-neutral-400 leading-relaxed">
+                        {lang === "bn"
+                          ? "📌 বায়ার এই লিংকে প্রবেশ করে বিকাশ, নগদ বা ব্যাংকের মাধ্যমে পাক্কাডিল অফিসিয়াল মার্চেন্টে টাকা ডিপোজিট করবেন। বায়ারের টাকা এসক্রো ভল্টে জমা হওয়ামাত্র আপনাকে নোটিফিকেশন পাঠানো হবে এবং আপনি পার্সেল পাঠানোর অপশন পাবেন।"
+                          : "📌 Send this link to the buyer. Once the buyer completes the escrow deposit, you will receive an instant notification to ship the package."}
+                      </p>
+                    </div>
+
+                    {/* Escrow Rule: Seller cannot pay for their own deal */}
+                    <div className="p-3 bg-neutral-100 dark:bg-neutral-800/80 border border-neutral-300 dark:border-neutral-700 text-xs text-neutral-600 dark:text-neutral-400 space-y-1">
+                      <div className="font-bold text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
+                        <span>🛡️</span>
+                        <span>
+                          {lang === "bn" ? "এসক্রো পলিসি: বিক্রেতা নিজে পেমেন্ট করতে পারবেন না" : "Escrow Policy: Seller Cannot Pay For Own Deal"}
+                        </span>
+                      </div>
+                      <p className="text-[11px] leading-relaxed">
+                        {lang === "bn"
+                          ? "যেহেতু আপনি এই ডিলের বিক্রেতা, তাই আপনি নিজে এতে টাকা জমা দিতে পারবেন না। এসক্রো নিয়মে শুধুমাত্র ক্রেতা (বায়ার) টাকা পরিশোধ করবেন এবং পণ্য ডেলিভারি সম্পন্ন হলে আপনি সার্ভিস চার্জ বাদে পুরো টাকা বুঝে পাবেন।"
+                          : "Because you are the seller, you cannot fund your own deal. The buyer must make the escrow payment, which will be released to you upon successful delivery."}
+                      </p>
+                    </div>
+
+                    {/* Seller Delete Option */}
+                    <div className="flex items-center justify-between pt-2 border-t border-amber-500/20">
+                      <span className="text-xs text-neutral-500">
+                        {lang === "bn"
+                          ? "বায়ার টাকা জমা দেওয়ার আগে যেকোনো সময় ডিলটি মুছে ফেলতে পারেন।"
+                          : "You can delete this deal anytime before the buyer deposits payment."}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleDeleteDeal}
+                        disabled={submitting}
+                        className="text-xs py-1.5 px-3 border border-rose-500/50 text-rose-600 hover:bg-rose-600 hover:text-white transition-colors font-medium flex items-center gap-1.5"
+                      >
+                        🗑️ {lang === "bn" ? "ডিল ডিলিট করুন" : "Delete Deal"}
+                      </button>
+                    </div>
+                  </div>
                 ) : (
-                  <p className="text-xs text-neutral-500 italic">
-                    Waiting for buyer ({buyer.phone}) to deposit funds into escrow. Share the deal link with them.
-                  </p>
+                  /* BUYER / GUEST VIEW: Prominent Escrow Payment Action Card */
+                  <div className="p-5 border-2 border-accent bg-accent/5 dark:bg-accent/10 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="space-y-1">
+                        <span className="text-xs uppercase font-extrabold text-accent tracking-wider block">
+                          🔒 {lang === "bn" ? "পাক্কাডিল অফিসিয়াল এসক্রো ডিপোজিট" : "PakkaDeal Official Escrow Deposit"}
+                        </span>
+                        <div className="text-2xl font-extrabold text-neutral-900 dark:text-neutral-100 font-mono">
+                          {deal.total_amount.toLocaleString()} BDT
+                        </div>
+                        <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                          {lang === "bn"
+                            ? "টাকা সরাসরি পাক্কাডিল এসক্রো ভল্টে নিরাপদে জমা থাকবে। আপনি পণ্য হাতে পেয়ে যাচাই না করা পর্যন্ত বিক্রেতা কোনো টাকা পাবেন না।"
+                            : "Funds remain safely locked in PakkaDeal escrow vault until you inspect and verify the product."}
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSenderPhone(user?.phone || deal.buyer_phone);
+                          setShowPayModal(true);
+                        }}
+                        className="btn text-sm py-3 px-6 font-bold shadow-md flex items-center justify-center gap-2 shrink-0"
+                      >
+                        💳 {lang === "bn" ? "বিকাশ / নগদ / ব্যাংকে পে করুন" : "Pay into Escrow (bKash/Nagad/Bank)"}
+                      </button>
+                    </div>
+
+                    {!user && (
+                      <p className="text-[11px] text-neutral-500 italic">
+                        {lang === "bn"
+                          ? "* আপনি অতিথি হিসেবে পেমেন্ট করতে পারেন। পেমেন্ট সম্পন্ন হলে স্বয়ংক্রিয়ভাবে আপনার অ্যাকাউন্টে লগইন হয়ে যাবে।"
+                          : "* You can pay as a guest. Your account will automatically authenticate once payment is confirmed."}
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -467,31 +687,11 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
             {/* State: shipped or in_transit */}
             {(deal.status === "shipped" || deal.status === "in_transit") && (
               <div className="space-y-4">
-                <div className="p-3 border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-black text-xs space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-sm">
-                      Courier: {deal.courier_name} (Tracking: {deal.tracking_id})
-                    </span>
-                    {deal.is_manual_courier ? (
-                      <span className="text-[10px] uppercase font-mono px-2 py-0.5 border border-amber-500 text-amber-600 font-bold">
-                        Manual Courier ({deal.manual_audit_status})
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="text-neutral-500">Status: {deal.courier_status || "In transit"}</div>
-                  {deal.courier_phone && (
-                    <div className="text-neutral-500 font-mono">Courier Phone: {deal.courier_phone}</div>
-                  )}
-
-                  {deal.has_consignment_slip && (
-                    <button
-                      onClick={() => setPreviewImage(`${API}/deals/${deal.code}/consignment-slip`)}
-                      className="text-xs text-accent font-semibold hover:underline block pt-1"
-                    >
-                      📄 View Consignment Slip →
-                    </button>
-                  )}
-                </div>
+                <TrackingTimeline
+                  tracking={data.tracking}
+                  deal={deal}
+                  onViewSlip={() => setPreviewImage(`${API}/deals/${deal.code}/consignment-slip`)}
+                />
 
                 {/* Demo courier simulation buttons */}
                 <div className="pt-2 border-t border-neutral-300 dark:border-neutral-700 space-y-2">
@@ -525,6 +725,11 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
             {/* State: delivered */}
             {deal.status === "delivered" && (
               <div className="space-y-4">
+                <TrackingTimeline
+                  tracking={data.tracking}
+                  deal={deal}
+                  onViewSlip={() => setPreviewImage(`${API}/deals/${deal.code}/consignment-slip`)}
+                />
                 <div className="flex flex-wrap gap-3">
                   {me.is_buyer && (
                     <>
@@ -855,7 +1060,19 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
               </div>
 
               <div>
-                <label htmlFor="pay-trx-id">{t("trxId")}</label>
+                <div className="flex justify-between items-center">
+                  <label htmlFor="pay-trx-id">{t("trxId")}</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTrxId("TX-" + Date.now().toString(36).toUpperCase());
+                      if (!senderPhone) setSenderPhone(deal.buyer_phone);
+                    }}
+                    className="text-[10px] text-accent underline hover:text-black dark:hover:text-white"
+                  >
+                    ⚡ {lang === "bn" ? "ডেমো TrxID" : "Demo TrxID"}
+                  </button>
+                </div>
                 <input
                   id="pay-trx-id"
                   required
@@ -887,49 +1104,158 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
         </div>
       )}
 
-      {/* MODAL: Dispatch Shipment with Pluggable / Manual Courier */}
+      {/* MODAL: Dispatch Shipment with Smart Courier Detection */}
       {showShipModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <form onSubmit={handleShip} className="box w-full max-w-md p-6 border-2 border-accent space-y-4 bg-white dark:bg-black max-h-[90vh] overflow-y-auto">
+          <form onSubmit={handleShip} className="box w-full max-w-lg p-6 border-2 border-accent space-y-4 bg-white dark:bg-black max-h-[92vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-neutral-200 dark:border-neutral-800 pb-2">
-              <h3 className="font-bold text-base">{t("addShip")}</h3>
-              <button type="button" onClick={() => setShowShipModal(false)} className="text-neutral-500">✕</button>
-            </div>
-
-            <div>
-              <label htmlFor="ship-courier-select">{t("courierName")}</label>
-              <select
-                id="ship-courier-select"
-                value={courierName}
-                onChange={(e) => setCourierName(e.target.value)}
+              <div>
+                <h3 className="font-bold text-base text-neutral-900 dark:text-neutral-100">{t("addShip")}</h3>
+                <span className="text-[11px] text-neutral-500 block">{t("courierTrackingHelp")}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowShipModal(false);
+                  setTrackingId("");
+                  setDetectionResult(null);
+                  setManualCourierMode(false);
+                }}
+                className="text-neutral-500 hover:text-black dark:hover:text-white"
               >
-                <option value="Steadfast">Steadfast Courier</option>
-                <option value="Pathao">Pathao Courier</option>
-                <option value="RedX">RedX Logistics</option>
-                <option value="Paperfly">Paperfly</option>
-                <option value="Other">Other (Manual Tracking / Local Courier)</option>
-              </select>
+                ✕
+              </button>
             </div>
 
-            {courierName === "Other" ? (
-              <div className="space-y-3 p-3 border border-amber-500/40 bg-amber-500/5">
-                <span className="text-xs font-bold text-amber-700 dark:text-amber-300 block uppercase">
-                  Manual Courier Verification Details
-                </span>
+            {/* Tracking ID Input: Primary Field */}
+            <div className="space-y-1.5">
+              <label htmlFor="ship-tracking-input" className="text-xs font-bold uppercase tracking-wider text-neutral-700 dark:text-neutral-300">
+                {t("courierTrackingId")} *
+              </label>
+              <div className="relative">
+                <input
+                  id="ship-tracking-input"
+                  required
+                  autoFocus
+                  value={trackingId}
+                  onChange={(e) => setTrackingId(e.target.value.toUpperCase())}
+                  placeholder="e.g. SF12345678, PT1029384, REDX..., CN-12345"
+                  className="font-mono text-sm tracking-wider uppercase font-semibold pr-10"
+                />
+                {detecting && (
+                  <div className="absolute right-3 top-2.5 text-xs text-neutral-400 animate-pulse">
+                    ...
+                  </div>
+                )}
+              </div>
+              <span className="text-[11px] text-neutral-500 block">
+                {detecting ? t("courierDetecting") : t("courierTrackingHelp")}
+              </span>
+            </div>
 
-                <div>
-                  <label htmlFor="custom-courier-name">Courier / Agency Name *</label>
-                  <input
-                    id="custom-courier-name"
-                    required
-                    value={customCourierName}
-                    onChange={(e) => setCustomCourierName(e.target.value)}
-                    placeholder="e.g. Sundarban Courier / SA Paribahan"
-                  />
+            {/* Auto-Detection Banner (When courier identified) */}
+            {detectionResult?.detectedCourier && !manualCourierMode && (
+              <div className="p-3.5 border border-emerald-500/40 bg-emerald-500/10 flex items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-700 dark:text-emerald-300 block">
+                    ✓ {t("courierDetected")}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-base font-bold text-neutral-900 dark:text-neutral-100">
+                      {detectionResult.detectedCourier}
+                    </span>
+                    <span className="text-xs px-2 py-0.5 bg-emerald-600 text-white font-mono font-bold">
+                      {detectionResult.detectionConfidence}% {lang === "bn" ? "নিশ্চিত" : "Match"}
+                    </span>
+                  </div>
                 </div>
 
+                <button
+                  type="button"
+                  onClick={() => setManualCourierMode(true)}
+                  className="text-xs font-semibold underline text-neutral-600 dark:text-neutral-300 hover:text-black dark:hover:text-white"
+                >
+                  {t("changeCourier")}
+                </button>
+              </div>
+            )}
+
+            {/* Ambiguous Detection or Manual Selection Mode */}
+            {(manualCourierMode || (!detectionResult?.detectedCourier && trackingId.length >= 3)) && (
+              <div className="space-y-3 p-3.5 border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900/50">
+                <div className="flex items-center justify-between">
+                  <label htmlFor="ship-courier-select" className="text-xs font-bold uppercase text-neutral-700 dark:text-neutral-300">
+                    {t("courierName")} *
+                  </label>
+                  {detectionResult?.detectedCourier && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCourierName(detectionResult.detectedCourier || "Steadfast");
+                        setManualCourierMode(false);
+                      }}
+                      className="text-[11px] text-accent underline"
+                    >
+                      ← {lang === "bn" ? "শনাক্তকৃত কুরিয়ার ব্যবহার করুন" : "Use Detected Courier"}
+                    </button>
+                  )}
+                </div>
+
+                {detectionResult?.isAmbiguous && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    ⚠️ {t("courierAmbiguous")}
+                  </p>
+                )}
+
+                <select
+                  id="ship-courier-select"
+                  value={courierName}
+                  onChange={(e) => setCourierName(e.target.value)}
+                  className="font-semibold text-sm"
+                >
+                  <option value="Steadfast">Steadfast Courier (API Verified)</option>
+                  <option value="Pathao">Pathao Courier (API Verified)</option>
+                  <option value="RedX">RedX Logistics (API Verified)</option>
+                  <option value="Paperfly">Paperfly (API Verified)</option>
+                  <option value="eCourier">eCourier (API Verified)</option>
+                  <option value="Sundarban Courier">Sundarban Courier (Manual / Offline)</option>
+                  <option value="SA Paribahan">SA Paribahan (Manual / Offline)</option>
+                  <option value="Other">Other / Local Courier (Manual Audit)</option>
+                </select>
+              </div>
+            )}
+
+            {/* Manual Courier Requirements (Sundarban, SA Paribahan, Other) */}
+            {(courierName === "Other" ||
+              courierName === "Sundarban Courier" ||
+              courierName === "SA Paribahan") && (
+              <div className="space-y-3 p-3.5 border border-amber-500/40 bg-amber-500/10 text-xs space-y-3">
+                <div className="space-y-1">
+                  <span className="font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300 block">
+                    ⚠️ {lang === "bn" ? "অফলাইন কুরিয়ার ভেরিফিকেশন" : "Manual Courier Audit Requirements"}
+                  </span>
+                  <p className="text-amber-900 dark:text-amber-200 leading-relaxed text-[11px]">
+                    {t("manualCourierWarning")}
+                  </p>
+                </div>
+
+                {courierName === "Other" && (
+                  <div>
+                    <label htmlFor="custom-courier-name">Courier / Agency Name *</label>
+                    <input
+                      id="custom-courier-name"
+                      required
+                      value={customCourierName}
+                      onChange={(e) => setCustomCourierName(e.target.value)}
+                      placeholder="e.g. Janani Express / Karatoa Courier"
+                    />
+                  </div>
+                )}
+
                 <div>
-                  <label htmlFor="courier-phone-input">Courier Contact Phone Number *</label>
+                  <label htmlFor="courier-phone-input">
+                    {lang === "bn" ? "কুরিয়ার যোগাযোগের মোবাইল নম্বর *" : "Courier Contact Phone Number *"}
+                  </label>
                   <input
                     id="courier-phone-input"
                     required
@@ -941,7 +1267,9 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                 </div>
 
                 <div>
-                  <label htmlFor="consignment-slip-file">Consignment Slip Photo (Required) *</label>
+                  <label htmlFor="consignment-slip-file">
+                    {lang === "bn" ? "কনসাইনমেন্ট রসিদের ছবি (বাধ্যতামূলক) *" : "Consignment Slip Photo (Required) *"}
+                  </label>
                   <input
                     id="consignment-slip-file"
                     type="file"
@@ -951,28 +1279,33 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                     className="text-xs"
                   />
                   <span className="text-[11px] text-neutral-500 mt-1 block">
-                    Upload physical booking receipt slip. Required for admin security audit.
+                    {lang === "bn"
+                      ? "কুরিয়ারের আসল বুকিং রসিদের ছবি আপলোড করুন।"
+                      : "Upload physical booking receipt slip. Required for admin safety audit."}
                   </span>
                 </div>
               </div>
-            ) : (
-              <div>
-                <label htmlFor="ship-tracking-input">{t("trackingId")} *</label>
-                <input
-                  id="ship-tracking-input"
-                  required
-                  value={trackingId}
-                  onChange={(e) => setTrackingId(e.target.value)}
-                  placeholder="e.g. SF-998822"
-                  className="font-mono text-sm"
-                />
-              </div>
             )}
 
-            <div className="flex gap-2">
-              <button type="button" onClick={() => setShowShipModal(false)} className="btn-ghost w-1/3">{t("cancel")}</button>
-              <button type="submit" disabled={submitting} className="btn w-2/3">
-                {submitting ? t("saving") : t("confirmShipment")}
+            <div className="flex gap-2 pt-2 border-t border-neutral-200 dark:border-neutral-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowShipModal(false);
+                  setTrackingId("");
+                  setDetectionResult(null);
+                  setManualCourierMode(false);
+                }}
+                className="btn-ghost w-1/3"
+              >
+                {t("cancel")}
+              </button>
+              <button type="submit" disabled={submitting || trackingId.trim().length < 3} className="btn w-2/3">
+                {submitting
+                  ? t("saving")
+                  : detectionResult?.detectedCourier && !manualCourierMode
+                  ? `${t("confirmCourier")} (${detectionResult.detectedCourier}) →`
+                  : t("confirmShipment")}
               </button>
             </div>
           </form>

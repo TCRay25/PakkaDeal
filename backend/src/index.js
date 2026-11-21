@@ -11,6 +11,7 @@ import disputeRoutes from "./routes/disputes.js";
 import profileRoutes from "./routes/profiles.js";
 import adminRoutes from "./routes/admin.js";
 import notificationRoutes from "./routes/notifications.js";
+import shipmentRoutes from "./routes/shipments.js";
 
 const app = express();
 
@@ -35,13 +36,30 @@ app.get("/health", (_req, res) => res.json({
   timestamp: new Date().toISOString(),
 }));
 
+// Mount routes (both root and /api prefixed for client compatibility)
 app.use("/auth", authRoutes);
+app.use("/api/auth", authRoutes);
+
 app.use("/deals", dealRoutes);
+app.use("/api/deals", dealRoutes);
+
+app.use("/shipments", shipmentRoutes);
+app.use("/api/shipments", shipmentRoutes);
+
 app.use("/courier", courierRoutes);
+app.use("/api/courier", courierRoutes);
+
 app.use("/profiles", profileRoutes);
+app.use("/api/profiles", profileRoutes);
+
 app.use("/admin", adminRoutes);
+app.use("/api/admin", adminRoutes);
+
 app.use("/notifications", notificationRoutes);
+app.use("/api/notifications", notificationRoutes);
+
 app.use("/", disputeRoutes);
+app.use("/api", disputeRoutes);
 
 // Error middleware
 app.use((err, _req, res, _next) => {

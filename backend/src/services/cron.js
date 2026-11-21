@@ -1,5 +1,5 @@
-import { checkAllTimeouts, applyCourier } from "./settle.js";
-import { pollActiveShipments } from "./courierService.js";
+import { checkAllTimeouts } from "./settle.js";
+import { pollActiveShipments } from "./tracking.service.js";
 
 let intervalId = null;
 
@@ -19,8 +19,8 @@ async function runTasks() {
     // 1. Check auto-release 24-hour timers and shipping timeouts
     await checkAllTimeouts();
 
-    // 2. Poll courier adapters for active shipments (Steadfast, Pathao, RedX, Paperfly)
-    await pollActiveShipments(applyCourier);
+    // 2. Poll courier providers for active shipments
+    await pollActiveShipments();
   } catch (err) {
     console.error("[CRON TASK ERROR]", err.message);
   }
