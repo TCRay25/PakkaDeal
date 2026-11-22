@@ -31,6 +31,9 @@ export function translateFirebaseError(errCode: string, lang: string = "bn"): st
   const code = (errCode || "").toLowerCase();
 
   if (lang === "bn") {
+    if (code.includes("region enabled") || code.includes("region") || code.includes("sms unable to be sent")) {
+      return "Firebase-এ বাংলাদেশ (+880) রিজিয়ন সক্রিয় করা নেই! Firebase Console -> Authentication -> Settings -> 'SMS region policy'-তে গিয়ে Bangladesh (+880) সিলেক্ট করে Allow করুন। অথবা 'Phone numbers for testing'-এ নম্বরটি সেভ করুন।";
+    }
     if (code.includes("configuration-not-found")) {
       return "Firebase Console-এ Phone Authentication সক্রিয় করা নেই! অনুগ্রহ করে Firebase Console -> Build -> Authentication -> Sign-in method-এ গিয়ে 'Phone' চালু (Enable) করে Save করুন।";
     }
