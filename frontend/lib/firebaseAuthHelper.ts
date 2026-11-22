@@ -28,51 +28,83 @@ export function formatBdPhoneNumber(input: string): { e164: string; local: strin
 }
 
 export function translateFirebaseError(errCode: string, lang: string = "bn"): string {
+  const code = (errCode || "").toLowerCase();
+
   if (lang === "bn") {
-    switch (errCode) {
-      case "auth/invalid-phone-number":
-        return "মোবাইল নম্বরের ফরম্যাটটি সঠিক নয়। অনুগ্রহ করে ০১XXXXXXXXX ফরম্যাটে লিখুন।";
-      case "auth/missing-phone-number":
-        return "মোবাইল নম্বর প্রদান করুন।";
-      case "auth/quota-exceeded":
-        return "এসএমএস প্রেরণের দৈনিক কোটা শেষ হয়ে গেছে। অনুগ্রহ করে কিছুক্ষণ পর চেষ্টা করুন।";
-      case "auth/too-many-requests":
-        return "অনেক বেশিবার চেষ্টা করা হয়েছে। নিরাপত্তার স্বার্থে কিছুক্ষণ পর পুনরায় চেষ্টা করুন।";
-      case "auth/invalid-verification-code":
-        return "ভুল ওটিপি কোড লিখেছেন। এসএমএসে আসা সঠিক ৬-সংখ্যার কোডটি দিন।";
-      case "auth/code-expired":
-        return "ওটিপি কোডটির মেয়াদ উত্তীর্ণ হয়ে গেছে। অনুগ্রহ করে 'OTP আবার পাঠান' চাপুন।";
-      case "auth/captcha-check-failed":
-        return "reCAPTCHA যাচাইকরণ সম্পন্ন হয়নি। পেজটি রিফ্রেশ করে আবার চেষ্টা করুন।";
-      case "auth/network-request-failed":
-        return "ইন্টারনেট সংযোগে সমস্যা হয়েছে। আপনার ইন্টারনেট কানেকশন চেক করুন।";
-      case "auth/invalid-app-credential":
-        return "Firebase কনফিগারেশন ত্রুটি। Firebase Console-এ ডোমেইন অনুমোদিত আছে কিনা যাচাই করুন।";
-      default:
-        return "একটি ত্রুটি ঘটেছে। অনুগ্রহ করে আবার চেষ্টা করুন।";
+    if (code.includes("missing-config") || code.includes("invalid-api-key") || code.includes("api-key-not-valid")) {
+      return "Firebase কনফিগারেশন মিসিং! অনুগ্রহ করে frontend/.env ফাইলে আপনার Firebase ক্রেডেনশিয়াল (NEXT_PUBLIC_FIREBASE_API_KEY ইত্যাদি) বসান।";
     }
+    if (code.includes("operation-not-allowed")) {
+      return "Firebase Console-এ Phone Sign-in সক্রিয় করা নেই। Authentication -> Sign-in method -> Phone Enable করুন।";
+    }
+    if (code.includes("unauthorized-domain")) {
+      return "এই ডোমেইনটি Firebase-এ অনুমোদিত নয়। Firebase Console -> Authentication -> Settings -> Authorized Domains-এ ডোমেইন যুক্ত করুন।";
+    }
+    if (code.includes("invalid-phone-number")) {
+      return "মোবাইল নম্বরের ফরম্যাটটি সঠিক নয়। অনুগ্রহ করে ০১XXXXXXXXX ফরম্যাটে লিখুন।";
+    }
+    if (code.includes("missing-phone-number")) {
+      return "মোবাইল নম্বর প্রদান করুন।";
+    }
+    if (code.includes("quota-exceeded")) {
+      return "এসএমএস প্রেরণের দৈনিক কোটা শেষ হয়ে গেছে। অনুগ্রহ করে কিছুক্ষণ পর চেষ্টা করুন।";
+    }
+    if (code.includes("too-many-requests")) {
+      return "অনেক বেশিবার চেষ্টা করা হয়েছে। নিরাপত্তার স্বার্থে কিছুক্ষণ পর পুনরায় চেষ্টা করুন।";
+    }
+    if (code.includes("invalid-verification-code")) {
+      return "ভুল ওটিপি কোড লিখেছেন। সঠিক ৬-সংখ্যার কোডটি দিন।";
+    }
+    if (code.includes("code-expired")) {
+      return "ওটিপি কোডটির মেয়াদ উত্তীর্ণ হয়ে গেছে। অনুগ্রহ করে 'OTP আবার পাঠান' চাপুন।";
+    }
+    if (code.includes("captcha-check-failed")) {
+      return "reCAPTCHA যাচাইকরণ সম্পন্ন হয়নি। পেজটি রিফ্রেশ করে আবার চেষ্টা করুন।";
+    }
+    if (code.includes("network-request-failed")) {
+      return "ইন্টারনেট সংযোগে সমস্যা হয়েছে। আপনার ইন্টারনেট কানেকশন চেক করুন।";
+    }
+    if (code.includes("invalid-app-credential")) {
+      return "Firebase কনফিগারেশন ত্রুটি। Firebase Console-এ ডোমেইন ও প্রজেক্ট সেটিংস যাচাই করুন।";
+    }
+    return `ত্রুটি ঘটেছে (${errCode})। অনুগ্রহ করে Firebase কনফিগারেশন চেক করে আবার চেষ্টা করুন।`;
   }
 
-  switch (errCode) {
-    case "auth/invalid-phone-number":
-      return "Invalid phone number format. Please enter in 01XXXXXXXXX format.";
-    case "auth/missing-phone-number":
-      return "Please enter a phone number.";
-    case "auth/quota-exceeded":
-      return "SMS quota exceeded. Please try again later.";
-    case "auth/too-many-requests":
-      return "Too many requests. Please wait a moment and try again.";
-    case "auth/invalid-verification-code":
-      return "Invalid verification code. Please check the 6-digit code.";
-    case "auth/code-expired":
-      return "Verification code has expired. Please request a new code.";
-    case "auth/captcha-check-failed":
-      return "reCAPTCHA verification failed. Please refresh the page and try again.";
-    case "auth/network-request-failed":
-      return "Network connection issue. Please check your internet connection.";
-    case "auth/invalid-app-credential":
-      return "Firebase configuration error. Please verify authorized domains in Firebase Console.";
-    default:
-      return "An error occurred. Please try again.";
+  if (code.includes("missing-config") || code.includes("invalid-api-key") || code.includes("api-key-not-valid")) {
+    return "Firebase configuration missing! Please add NEXT_PUBLIC_FIREBASE_API_KEY in frontend/.env.";
   }
+  if (code.includes("operation-not-allowed")) {
+    return "Phone provider is disabled. Please enable Phone in Firebase Console -> Authentication -> Sign-in method.";
+  }
+  if (code.includes("unauthorized-domain")) {
+    return "This domain is not authorized. Add it to Firebase Console -> Authentication -> Settings -> Authorized domains.";
+  }
+  if (code.includes("invalid-phone-number")) {
+    return "Invalid phone number format. Please enter in 01XXXXXXXXX format.";
+  }
+  if (code.includes("missing-phone-number")) {
+    return "Please enter a phone number.";
+  }
+  if (code.includes("quota-exceeded")) {
+    return "SMS quota exceeded. Please try again later.";
+  }
+  if (code.includes("too-many-requests")) {
+    return "Too many requests. Please wait a moment and try again.";
+  }
+  if (code.includes("invalid-verification-code")) {
+    return "Invalid verification code. Please check the 6-digit code.";
+  }
+  if (code.includes("code-expired")) {
+    return "Verification code has expired. Please request a new code.";
+  }
+  if (code.includes("captcha-check-failed")) {
+    return "reCAPTCHA verification failed. Please refresh the page and try again.";
+  }
+  if (code.includes("network-request-failed")) {
+    return "Network connection issue. Please check your internet connection.";
+  }
+  if (code.includes("invalid-app-credential")) {
+    return "Firebase configuration error. Please verify authorized domains in Firebase Console.";
+  }
+  return `Error (${errCode}). Please check your Firebase configuration and try again.`;
 }

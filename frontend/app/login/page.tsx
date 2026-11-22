@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { post } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
-import { getFirebaseAuth } from "@/lib/firebase";
+import { getFirebaseAuth, isFirebaseConfigured } from "@/lib/firebase";
 import { RecaptchaVerifier, signInWithPhoneNumber, ConfirmationResult } from "firebase/auth";
 import { formatBdPhoneNumber, translateFirebaseError } from "@/lib/firebaseAuthHelper";
 
@@ -62,6 +62,15 @@ export default function LoginPage() {
   async function handleSendOtp(e?: React.FormEvent) {
     if (e) e.preventDefault();
     setErr("");
+
+    if (!isFirebaseConfigured()) {
+      setErr(
+        lang === "bn"
+          ? "Firebase কনফিগারেশন মিসিং! অনুগ্রহ করে frontend/.env ফাইলে আপনার Firebase ক্রেডেনশিয়াল (NEXT_PUBLIC_FIREBASE_API_KEY ইত্যাদি) বসান।"
+          : "Firebase configuration is missing! Please add NEXT_PUBLIC_FIREBASE_API_KEY in frontend/.env."
+      );
+      return;
+    }
 
     const { e164, isValid } = formatBdPhoneNumber(phone);
     if (!isValid) {
