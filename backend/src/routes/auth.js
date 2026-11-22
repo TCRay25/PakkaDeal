@@ -2,6 +2,7 @@ import { Router } from "express";
 import { config, isDemoPhone } from "../config.js";
 import { one, q } from "../db.js";
 import { auth, fail, isAdmin, makeToken } from "../http.js";
+import { sendSms } from "../services/smsService.js";
 
 const router = Router();
 export const PHONE = /^01[3-9]\d{8}$/;
@@ -43,6 +44,10 @@ router.post("/send-otp", async (req, res) => {
     `OTP Code: ${otp} (মেয়াদ ৫ মিনিট / Valid for 5 minutes)\n` +
     `======================================================================\n`
   );
+
+  // Send real SMS if an SMS gateway is configured in .env
+  const smsMessage = `[PakkaDeal] আপনার অ্যাকাউন্ট ভেরিফিকেশন ওটিপি কোড হলো: ${otp}। এটি কারো সাথে শেয়ার করবেন না। মেয়াদ ৫ মিনিট।`;
+  await sendSms(phone, smsMessage);
 
   res.json({
     sent: true,
