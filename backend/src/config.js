@@ -7,6 +7,7 @@ export const config = {
   secretKey: process.env.SECRET_KEY || "pakkadeal-super-secret-key-prod-2026",
   corsOrigins: (process.env.CORS_ORIGINS || "http://localhost:3000,http://127.0.0.1:3000").split(",").map((s) => s.trim()),
   demoOtp: process.env.DEMO_OTP || "123456",
+  demoPhones: (process.env.DEMO_PHONES || "01700000000,01711223344,01755667788").split(",").map((s) => s.trim()),
   adminPhones: (process.env.ADMIN_PHONES || "01700000000").split(",").map((s) => s.trim()),
   webhookKey: process.env.WEBHOOK_KEY || "demo-webhook-key",
   shipWithinHours: Number(process.env.SHIP_WITHIN_HOURS || 48),
@@ -16,3 +17,9 @@ export const config = {
   geminiKey: process.env.GEMINI_API_KEY || "",
   geminiModel: process.env.GEMINI_MODEL || "gemini-2.0-flash",
 };
+
+export function isDemoPhone(phone) {
+  const p = (phone || "").trim();
+  return config.demoPhones.includes(p) || config.adminPhones.includes(p);
+}
+

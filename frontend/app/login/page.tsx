@@ -7,29 +7,69 @@ import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 
 export default function Login() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { login } = useAuth();
   const router = useRouter();
 
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
   const [otp, setOtp] = useState("");
+  const [isDemo, setIsDemo] = useState(false);
+  const [devOtp, setDevOtp] = useState("");
   const [step, setStep] = useState<"phone" | "otp">("phone");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
 
-  async function sendOtp(e: React.FormEvent) {
-    e.preventDefault();
+  async function sendOtp(e?: React.FormEvent) {
+    if (e) e.preventDefault();
     setErr("");
     setLoading(true);
     try {
-      await post("/auth/send-otp", { phone });
+      const res = await post<{
+        sent: boolean;
+        is_demo?: boolean;
+        demo_otp?: string;
+        dev_otp?: string;
+        message: string;
+      }>("/auth/send-otp", { phone });
       setStep("otp");
-      setOtp("123456");
+      setIsDemo(Boolean(res.is_demo));
+      if (res.is_demo && res.demo_otp) {
+        setOtp(res.demo_otp);
+      } else {
+        setOtp("");
+        if (res.dev_otp) setDevOtp(res.dev_otp);
+      }
     } catch (x: any) {
-      setErr(x.message);
+      setErr(x.message || "Failed to send code");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleResend() {
+    setErr("");
+    setResending(true);
+    try {
+      const res = await post<{
+        sent: boolean;
+        is_demo?: boolean;
+        demo_otp?: string;
+        dev_otp?: string;
+        message: string;
+      }>("/auth/send-otp", { phone });
+      if (res.is_demo && res.demo_otp) {
+        setOtp(res.demo_otp);
+      } else {
+        setOtp("");
+        if (res.dev_otp) setDevOtp(res.dev_otp);
+      }
+      alert(res.message || (lang === "bn" ? "নতুন ওটিপি পাঠানো হয়েছে।" : "New OTP sent."));
+    } catch (x: any) {
+      setErr(x.message || "Failed to resend code");
+    } finally {
+      setResending(false);
     }
   }
 
@@ -46,7 +86,7 @@ export default function Login() {
         router.push("/dashboard");
       }
     } catch (x: any) {
-      setErr(x.message);
+      setErr(x.message || "Verification failed");
     } finally {
       setLoading(false);
     }
@@ -143,18 +183,38 @@ export default function Login() {
             {t("codeSentTo")}: <strong className="text-neutral-900 dark:text-neutral-100 font-mono">{phone}</strong>
           </div>
 
+          {/* Development mode OTP auto-fill helper */}
+          {devOtp && !isDemo && (
+            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs flex items-center justify-between">
+              <div>
+                <span className="font-semibold">{lang === "bn" ? "ভেরিফিকেশন কোড: " : "Verification Code: "}</span>
+                <span className="font-mono font-bold tracking-widest text-sm">{devOtp}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOtp(devOtp)}
+                className="text-[11px] underline font-semibold text-emerald-700 dark:text-emerald-300 hover:text-emerald-900"
+              >
+                {lang === "bn" ? "অটো-ফিল করুন" : "Auto-fill"}
+              </button>
+            </div>
+          )}
+
           <div>
             <label htmlFor="login-code-input">{t("code")}</label>
             <input
               id="login-code-input"
               required
               inputMode="numeric"
+              maxLength={6}
               value={otp}
-              onChange={(e) => setOtp(e.target.value)}
-              placeholder="123456"
-              className="font-mono text-center tracking-widest text-lg"
+              onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+              placeholder={isDemo ? "123456" : "••••••"}
+              className="font-mono text-center tracking-widest text-lg font-bold"
             />
-            <p className="text-xs text-neutral-500 mt-1">{t("demoCode")}</p>
+            <p className="text-xs text-neutral-500 mt-1 text-center">
+              {isDemo ? t("demoCode") : t("realCodeNotice")}
+            </p>
           </div>
 
           {err && <p className="text-xs text-red-600 dark:text-red-400">{err}</p>}
@@ -171,6 +231,19 @@ export default function Login() {
               {loading ? t("loading") : t("login")}
             </button>
           </div>
+
+          {!isDemo && (
+            <div className="pt-2 text-center text-xs">
+              <button
+                type="button"
+                onClick={handleResend}
+                disabled={resending}
+                className="text-neutral-500 hover:text-accent underline transition-colors"
+              >
+                {resending ? t("loading") : t("resendCode")}
+              </button>
+            </div>
+          )}
         </form>
       )}
     </div>

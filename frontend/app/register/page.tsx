@@ -13,26 +13,68 @@ export default function RegisterPage() {
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
   const [pageName, setPageName] = useState("");
   const [city, setCity] = useState("Dhaka");
   const [otp, setOtp] = useState("");
+  const [isDemo, setIsDemo] = useState(false);
+  const [devOtp, setDevOtp] = useState("");
   const [step, setStep] = useState<"details" | "otp">("details");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
 
-  async function handleSendOtp(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleSendOtp(e?: React.FormEvent) {
+    if (e) e.preventDefault();
     setErr("");
     setLoading(true);
 
     try {
-      await post("/auth/send-otp", { phone });
+      const res = await post<{
+        sent: boolean;
+        is_demo?: boolean;
+        demo_otp?: string;
+        dev_otp?: string;
+        message: string;
+      }>("/auth/send-otp", { phone, email });
+
       setStep("otp");
-      setOtp("123456"); // Pre-fill demo OTP
+      setIsDemo(Boolean(res.is_demo));
+      if (res.is_demo && res.demo_otp) {
+        setOtp(res.demo_otp);
+      } else {
+        setOtp(""); // Real account: box starts completely empty
+        if (res.dev_otp) setDevOtp(res.dev_otp);
+      }
     } catch (x: any) {
       setErr(x.message || "Failed to send code");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleResend() {
+    setErr("");
+    setResending(true);
+    try {
+      const res = await post<{
+        sent: boolean;
+        is_demo?: boolean;
+        demo_otp?: string;
+        dev_otp?: string;
+        message: string;
+      }>("/auth/send-otp", { phone, email });
+      if (res.is_demo && res.demo_otp) {
+        setOtp(res.demo_otp);
+      } else {
+        setOtp("");
+        if (res.dev_otp) setDevOtp(res.dev_otp);
+      }
+      alert(res.message || (lang === "bn" ? "নতুন ওটিপি কোড পাঠানো হয়েছে।" : "New OTP sent."));
+    } catch (x: any) {
+      setErr(x.message || "Failed to resend code");
+    } finally {
+      setResending(false);
     }
   }
 
@@ -46,6 +88,7 @@ export default function RegisterPage() {
         phone,
         otp,
         name,
+        email,
         page_name: pageName,
         role: "user",
       });
@@ -97,6 +140,21 @@ export default function RegisterPage() {
           </div>
 
           <div>
+            <label htmlFor="reg-email-input">{t("emailOptional")}</label>
+            <input
+              id="reg-email-input"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="example@mail.com"
+              className="font-mono"
+            />
+            <span className="text-xs text-neutral-500 mt-1 block">
+              {t("emailHelp")}
+            </span>
+          </div>
+
+          <div>
             <label htmlFor="reg-page-name-input">{t("shopOrgNameOptional")}</label>
             <input
               id="reg-page-name-input"
@@ -134,9 +192,33 @@ export default function RegisterPage() {
         </form>
       ) : (
         <form onSubmit={handleVerify} className="box p-6 space-y-4">
-          <div className="text-xs text-neutral-500">
-            {t("codeSentTo")}: <strong className="text-neutral-900 dark:text-neutral-100 font-mono">{phone}</strong>
+          <div className="text-xs text-neutral-500 space-y-1">
+            <div>
+              {t("codeSentTo")}: <strong className="text-neutral-900 dark:text-neutral-100 font-mono">{phone}</strong>
+            </div>
+            {email && (
+              <div className="text-neutral-500">
+                {lang === "bn" ? "ইমেইল: " : "Email: "}<span className="font-mono text-neutral-700 dark:text-neutral-300">{email}</span>
+              </div>
+            )}
           </div>
+
+          {/* Development mode OTP auto-fill helper */}
+          {devOtp && !isDemo && (
+            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs flex items-center justify-between">
+              <div>
+                <span className="font-semibold">{lang === "bn" ? "ভেরিফিকেশন কোড: " : "Verification Code: "}</span>
+                <span className="font-mono font-bold tracking-widest text-sm">{devOtp}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOtp(devOtp)}
+                className="text-[11px] underline font-semibold text-emerald-700 dark:text-emerald-300 hover:text-emerald-900"
+              >
+                {lang === "bn" ? "অটো-ফিল করুন" : "Auto-fill"}
+              </button>
+            </div>
+          )}
 
           <div>
             <label htmlFor="reg-code-input">{t("code")}</label>
@@ -144,13 +226,14 @@ export default function RegisterPage() {
               id="reg-code-input"
               required
               inputMode="numeric"
+              maxLength={6}
               value={otp}
-              onChange={(e) => setOtp(e.target.value)}
-              placeholder="123456"
+              onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+              placeholder={isDemo ? "123456" : "••••••"}
               className="font-mono text-center text-lg tracking-widest font-bold"
             />
             <span className="text-xs text-neutral-500 mt-1 block text-center">
-              {t("demoCode")}
+              {isDemo ? t("demoCode") : t("realCodeNotice")}
             </span>
           </div>
 
@@ -168,6 +251,19 @@ export default function RegisterPage() {
               {loading ? t("loading") : t("register")}
             </button>
           </div>
+
+          {!isDemo && (
+            <div className="pt-2 text-center text-xs">
+              <button
+                type="button"
+                onClick={handleResend}
+                disabled={resending}
+                className="text-neutral-500 hover:text-accent underline transition-colors"
+              >
+                {resending ? t("loading") : t("resendCode")}
+              </button>
+            </div>
+          )}
         </form>
       )}
     </div>

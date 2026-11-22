@@ -109,12 +109,21 @@ export async function initDb() {
         id integer primary key autoincrement,
         phone text unique not null,
         name text not null default '',
+        email text not null default '',
         role text not null default 'seller',
         page_name text not null default '',
         page_url text not null default '',
         seller_trust int not null default 70,
         buyer_trust int not null default 60,
         is_suspended int not null default 0,
+        created_at text not null default (datetime('now'))
+      );
+
+      create table if not exists otps (
+        phone text primary key,
+        code text not null,
+        email text not null default '',
+        expires_at text not null,
         created_at text not null default (datetime('now'))
       );
 
@@ -288,12 +297,21 @@ export async function initDb() {
         id serial primary key,
         phone text unique not null,
         name text not null default '',
+        email text not null default '',
         role text not null default 'seller',
         page_name text not null default '',
         page_url text not null default '',
         seller_trust int not null default 70,
         buyer_trust int not null default 60,
         is_suspended int not null default 0,
+        created_at timestamptz not null default now()
+      );
+
+      create table if not exists otps (
+        phone text primary key,
+        code text not null,
+        email text not null default '',
+        expires_at timestamptz not null,
         created_at timestamptz not null default now()
       );
 
@@ -538,6 +556,7 @@ async function runMigrations() {
 
       const userCols = db.prepare("pragma table_info(users)").all().map(c => c.name);
       const neededUserCols = [
+        ["email", "text not null default ''"],
         ["page_name", "text not null default ''"],
         ["page_url", "text not null default ''"],
         ["seller_trust", "int not null default 70"],
@@ -549,6 +568,15 @@ async function runMigrations() {
           db.exec(`alter table users add column ${col} ${colType}`);
         }
       }
+      db.exec(`
+        create table if not exists otps (
+          phone text primary key,
+          code text not null,
+          email text not null default '',
+          expires_at text not null,
+          created_at text not null default (datetime('now'))
+        );
+      `);
 
       const disputeCols = db.prepare("pragma table_info(disputes)").all().map(c => c.name);
       const neededDisputeCols = [
@@ -685,6 +713,7 @@ async function runMigrations() {
       }
 
       const neededUserCols = [
+        ["email", "text not null default ''"],
         ["page_name", "text not null default ''"],
         ["page_url", "text not null default ''"],
         ["seller_trust", "int not null default 70"],
@@ -694,6 +723,15 @@ async function runMigrations() {
       for (const [col, colType] of neededUserCols) {
         await pgPool.query(`alter table users add column if not exists ${col} ${colType}`);
       }
+      await pgPool.query(`
+        create table if not exists otps (
+          phone text primary key,
+          code text not null,
+          email text not null default '',
+          expires_at timestamptz not null,
+          created_at timestamptz not null default now()
+        );
+      `);
 
       const neededDisputeCols = [
         ["raised_by_phone", "text not null default ''"],

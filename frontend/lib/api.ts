@@ -22,14 +22,14 @@ export async function api<T = any>(path: string, init?: RequestInit): Promise<T>
   return res.json();
 }
 
-export const post = (path: string, body?: unknown) =>
-  api(path, {
+export const post = <T = any>(path: string, body?: unknown): Promise<T> =>
+  api<T>(path, {
     method: "POST",
     body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
   });
 
-export const patch = (path: string, body?: unknown) =>
-  api(path, {
+export const patch = <T = any>(path: string, body?: unknown): Promise<T> =>
+  api<T>(path, {
     method: "PATCH",
     body: body === undefined ? undefined : JSON.stringify(body),
   });
