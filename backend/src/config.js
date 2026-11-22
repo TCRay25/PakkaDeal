@@ -11,7 +11,7 @@ export const config = {
   webhookKey: process.env.WEBHOOK_KEY || "demo-webhook-key",
   shipWithinHours: Number(process.env.SHIP_WITHIN_HOURS || 48),
   confirmWithinHours: Number(process.env.CONFIRM_WITHIN_HOURS || 72),
-  feePercent: Number(process.env.FEE_PERCENT || 2),
+  feePercent: Number(process.env.FEE_PERCENT || 1),
   feeMin: Number(process.env.FEE_MIN || 10),
   geminiKey: process.env.GEMINI_API_KEY || "",
   geminiModel: process.env.GEMINI_MODEL || "gemini-2.0-flash",

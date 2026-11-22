@@ -116,13 +116,21 @@ async function view(deal, user) {
   // Strip large raw buffers from JSON response
   const { buyer_phone, consignment_slip, unboxing_photo, ...rest } = deal;
 
+  const dealView = {
+    ...rest,
+    has_consignment_slip: !!consignment_slip,
+    has_unboxing_photo: !!unboxing_photo,
+    buyer_phone: isSeller || isBuyer || isAdminUser ? buyer_phone : mask(buyer_phone),
+  };
+
+  // If the viewer is the seller, they do NOT see the buyer's escrow service fee
+  if (isSeller && !isAdminUser) {
+    dealView.fee_amount = 0;
+    dealView.fee_percent = 0;
+  }
+
   return {
-    deal: {
-      ...rest,
-      has_consignment_slip: !!consignment_slip,
-      has_unboxing_photo: !!unboxing_photo,
-      buyer_phone: isSeller || isBuyer || isAdminUser ? buyer_phone : mask(buyer_phone),
-    },
+    deal: dealView,
     seller,
     buyer: {
       phone: isSeller || isBuyer || isAdminUser ? deal.buyer_phone : mask(deal.buyer_phone),
@@ -216,10 +224,11 @@ router.post("/", auth, async (req, res) => {
   if (!(price > 0)) fail(400, "Amount must be greater than 0");
   if (b.buyer_phone === req.user.phone) fail(400, "You cannot create a deal with your own phone number");
 
-  const totalAmount = price + charge;
-  const feePercent = Number(await getSetting("platform_fee_percent", config.feePercent || 2));
-  const feeAmount = await calculateFee(totalAmount);
-  const sellerPayout = totalAmount - feeAmount;
+  const baseSubtotal = price + charge;
+  const feePercent = Number(await getSetting("platform_fee_percent", config.feePercent || 1));
+  const feeAmount = await calculateFee(baseSubtotal);
+  const totalAmount = baseSubtotal + feeAmount; // Buyer pays product + delivery + platform fee
+  const sellerPayout = baseSubtotal; // Seller receives full 100% of price + delivery (0 fee deducted from seller)
 
   const buyer = await getBuyer(b.buyer_phone);
   const hourBd = (new Date().getUTCHours() + 6) % 24;
@@ -277,7 +286,7 @@ router.post("/", auth, async (req, res) => {
 
   await notify(
     deal.buyer_phone,
-    `PakkaDeal: ${req.user.page_name || req.user.name} invited you to deal #${deal.code} for "${deal.product}". Total: ${totalAmount} BDT. Pay into escrow to proceed.`,
+    `PakkaDeal: ${req.user.page_name || req.user.name} invited you to deal #${deal.code} for "${deal.product}". Total: ${totalAmount} BDT (including ${feePercent}% escrow fee). Pay into escrow to proceed.`,
     "New Deal Invitation",
     deal.code
   );

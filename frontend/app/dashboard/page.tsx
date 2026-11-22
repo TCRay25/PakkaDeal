@@ -125,7 +125,7 @@ export default function Dashboard() {
                   <th className="px-4 py-3">{lang === "bn" ? "কোড / শিরোনাম" : "Code / Title"}</th>
                   <th className="px-4 py-3">{lang === "bn" ? "ধরন" : "Type"}</th>
                   <th className="px-4 py-3">{lang === "bn" ? "অপর পক্ষ" : "Counterparty"}</th>
-                  <th className="px-4 py-3">{lang === "bn" ? "মোট এসক্রো" : "Total Escrow"}</th>
+                  <th className="px-4 py-3">{lang === "bn" ? "টাকার পরিমাণ" : "Amount"}</th>
                   <th className="px-4 py-3">{lang === "bn" ? "স্ট্যাটাস" : "Status"}</th>
                   <th className="px-4 py-3">{lang === "bn" ? "পরবর্তী করণীয়" : "What to do next"}</th>
                   <th className="px-4 py-3 text-right">{lang === "bn" ? "অ্যাকশন" : "Action"}</th>
@@ -179,7 +179,25 @@ export default function Dashboard() {
                         )}
                       </td>
                       <td className="px-4 py-3 font-mono font-semibold text-neutral-900 dark:text-neutral-100">
-                        {deal.total_amount.toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
+                        {isCreator ? (
+                          <div>
+                            <div>
+                              {(deal.seller_payout || (deal.price + (deal.delivery_charge || 0))).toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
+                            </div>
+                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-sans font-normal block">
+                              {lang === "bn" ? "১০০% পাওনা (০% ফি)" : "100% Payout (0% fee)"}
+                            </span>
+                          </div>
+                        ) : (
+                          <div>
+                            <div>
+                              {deal.total_amount.toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
+                            </div>
+                            <span className="text-[10px] text-neutral-500 font-sans font-normal block">
+                              {lang === "bn" ? "এসক্রো চার্জ সহ" : "incl. escrow fee"}
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <StatusBadge status={deal.status} />

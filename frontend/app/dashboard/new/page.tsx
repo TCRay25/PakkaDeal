@@ -29,9 +29,7 @@ export default function CreateDealPage() {
   const [err, setErr] = useState("");
 
   const charge = dealType === "product" ? Number(deliveryCharge) || 0 : 0;
-  const totalAmount = Number(price || 0) + charge;
-  const feeAmount = calculateFee(totalAmount);
-  const sellerPayout = Math.max(0, totalAmount - feeAmount);
+  const sellerPayout = Number(price || 0) + charge;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -298,24 +296,18 @@ export default function CreateDealPage() {
                   <span className="font-mono font-medium">{charge.toLocaleString()} BDT</span>
                 </div>
               )}
-              <div className="flex justify-between border-t border-dashed border-neutral-300 dark:border-neutral-700 pt-2 font-bold text-base">
-                <span>{t("totalHeld")}:</span>
-                <span className="font-mono text-accent">{totalAmount.toLocaleString()} BDT</span>
-              </div>
-              <div className="flex justify-between text-xs text-neutral-500">
-                <span>{t("platformFee")}:</span>
-                <span className="font-mono">-{feeAmount.toLocaleString()} BDT</span>
-              </div>
-              <div className="flex justify-between border-t border-neutral-300 dark:border-neutral-700 pt-2 font-bold text-emerald-600 dark:text-emerald-400">
-                <span>{t("sellerPayout")}:</span>
+              <div className="flex justify-between border-t border-neutral-300 dark:border-neutral-700 pt-2 font-bold text-base text-emerald-600 dark:text-emerald-400">
+                <span>{lang === "bn" ? "আপনার মোট পাওনা:" : t("sellerPayout") + ":"}</span>
                 <span className="font-mono">{sellerPayout.toLocaleString()} BDT</span>
               </div>
             </div>
 
-            <div className="p-3 border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-black text-xs text-neutral-600 dark:text-neutral-400 space-y-1">
-              <strong>{t("escrowGuaranteeTitle")}:</strong>
-              <p>
-                {t("escrowGuaranteeText")}
+            <div className="p-3 border border-emerald-500/30 bg-emerald-50/50 dark:bg-emerald-950/20 text-xs text-emerald-800 dark:text-emerald-300 space-y-1">
+              <strong className="block">✓ {lang === "bn" ? "১০০% বিক্রেতা পাওনা (০% ফি)" : "100% Payout (0% Seller Fee)"}</strong>
+              <p className="text-[11px] leading-relaxed">
+                {lang === "bn"
+                  ? "আপনার নির্ধারিত মূল্য থেকে কোনো প্ল্যাটফর্ম ফি কাটা হবে না। ডেলিভারি সম্পন্ন হলে আপনি সম্পূর্ণ টাকা বুঝে পাবেন। ক্রেতা পেমেন্টের সময় এসক্রো চার্জ বহন করবেন।"
+                  : "0% fee is deducted from your payout. You will receive 100% of your listed price and delivery charge."}
               </p>
             </div>
           </div>

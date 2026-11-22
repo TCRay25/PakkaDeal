@@ -346,8 +346,8 @@ export async function applyCourier(deal, status) {
 export async function releaseToSeller(deal, outcome = "buyer_confirmed", actor = "buyer", proofOpts = {}) {
   assertTransition(deal.status, "released", actor);
 
-  const payout = deal.seller_payout || (deal.total_amount - deal.fee_amount);
-  const fee = deal.fee_amount || (await calculateFee(deal.total_amount));
+  const payout = deal.seller_payout || (deal.price + (deal.delivery_charge || 0));
+  const fee = deal.fee_amount || Math.max(0, deal.total_amount - payout);
 
   const unboxingPhoto = proofOpts.unboxingPhoto || null;
   const unboxingPhotoType = proofOpts.unboxingPhotoType || "";
@@ -400,7 +400,7 @@ export async function releaseToSeller(deal, outcome = "buyer_confirmed", actor =
 
   await notifySeller(
     deal.seller_id,
-    `PakkaDeal #${deal.code}: ${payout.toLocaleString()} BDT released to your account (minus ${fee} BDT platform fee).`,
+    `PakkaDeal #${deal.code}: ${payout.toLocaleString()} BDT released to your account in full.`,
     "Funds Released to Seller",
     deal.code
   );
@@ -593,8 +593,8 @@ export async function applyHandoverConfirmation(deal, user) {
 
 /** Admin Force Release */
 export async function adminForceRelease(deal, adminNotes = "", actor = "admin") {
-  const payout = deal.seller_payout || (deal.total_amount - deal.fee_amount);
-  const fee = deal.fee_amount || (await calculateFee(deal.total_amount));
+  const payout = deal.seller_payout || (deal.price + (deal.delivery_charge || 0));
+  const fee = deal.fee_amount || Math.max(0, deal.total_amount - payout);
 
   await q(
     `update deals set status='released', outcome='admin_forced_release', auto_release_paused=1, updated_at=CURRENT_TIMESTAMP where id=$1`,

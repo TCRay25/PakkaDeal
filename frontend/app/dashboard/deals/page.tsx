@@ -168,7 +168,7 @@ export default function DealsListPage() {
                 <th className="px-4 py-3">{t("deal")}</th>
                 <th className="px-4 py-3">{t("type")}</th>
                 <th className="px-4 py-3">{t("counterparty")}</th>
-                <th className="px-4 py-3">{t("totalHeld")}</th>
+                <th className="px-4 py-3">{lang === "bn" ? "টাকার পরিমাণ" : "Amount"}</th>
                 <th className="px-4 py-3">{t("status")}</th>
                 <th className="px-4 py-3">{lang === "bn" ? "পরবর্তী করণীয়" : "What to do next"}</th>
                 <th className="px-4 py-3">{t("date")}</th>
@@ -223,7 +223,25 @@ export default function DealsListPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 font-mono font-semibold">
-                      {deal.total_amount.toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
+                      {isCreator ? (
+                        <div>
+                          <div className="text-neutral-900 dark:text-neutral-100">
+                            {(deal.seller_payout || (deal.price + (deal.delivery_charge || 0))).toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
+                          </div>
+                          <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-sans font-normal block">
+                            {lang === "bn" ? "১০০% পাওনা (০% ফি)" : "100% Payout (0% fee)"}
+                          </span>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="text-neutral-900 dark:text-neutral-100">
+                            {deal.total_amount.toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
+                          </div>
+                          <span className="text-[10px] text-neutral-500 font-sans font-normal block">
+                            {lang === "bn" ? "এসক্রো চার্জ সহ" : "incl. escrow fee"}
+                          </span>
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <StatusBadge status={deal.status} />

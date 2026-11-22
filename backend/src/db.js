@@ -599,6 +599,7 @@ async function runMigrations() {
 
       db.exec(`update deals set seller_payout = max(total_amount - fee_amount, 0) where (seller_payout is null or seller_payout = 0) and total_amount > 0`);
       db.exec(`update deals set fee_percent = round(cast(fee_amount as real) * 100.0 / total_amount, 1) where total_amount > 0 and (fee_percent is null or fee_percent = 0)`);
+      db.exec(`update settings set value='1' where key='platform_fee_percent' and value='2'`);
     } else if (pgPool) {
       const neededDealCols = [
         ["deal_type", "text not null default 'product'"],
@@ -729,6 +730,7 @@ async function runMigrations() {
 
       await pgPool.query(`update deals set seller_payout = greatest(total_amount - fee_amount, 0) where (seller_payout is null or seller_payout = 0) and total_amount > 0`);
       await pgPool.query(`update deals set fee_percent = round(cast(fee_amount as numeric) * 100.0 / nullif(total_amount, 0), 1) where total_amount > 0 and (fee_percent is null or fee_percent = 0)`);
+      await pgPool.query(`update settings set value='1' where key='platform_fee_percent' and value='2'`);
     }
   } catch (migErr) {
     console.warn("Migration warning:", migErr.message);
@@ -740,7 +742,7 @@ async function seedInitialData() {
   const count = Number(existingSettings?.cnt || 0);
   if (count === 0) {
     const defaultSettings = [
-      ["platform_fee_percent", "2", "Escrow service fee percentage deducted from seller payout"],
+      ["platform_fee_percent", "1", "Escrow service fee percentage added to buyer checkout"],
       ["platform_fee_min", "10", "Minimum platform service fee in BDT"],
       ["confirm_window_hours", "72", "Buyer confirmation window after delivery/handover before auto-release"],
       ["ship_within_hours", "48", "Seller shipping window before automatic full buyer refund"],

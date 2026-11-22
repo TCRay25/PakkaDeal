@@ -3,11 +3,11 @@ import assert from "node:assert/strict";
 import { initDb, q, one } from "../src/db.js";
 import { calculateFee, applyPayment, applyShip, applyCourier, releaseToSeller } from "../src/services/settle.js";
 
-test("escrow fee calculation: 2% with 10 BDT min", async () => {
+test("escrow fee calculation: 1% with 10 BDT min", async () => {
   await initDb();
   assert.equal(await calculateFee(100), 10);
-  assert.equal(await calculateFee(1000), 20);
-  assert.equal(await calculateFee(32000), 640);
+  assert.equal(await calculateFee(1000), 10);
+  assert.equal(await calculateFee(32000), 320);
 });
 
 test("escrow payment and payout flow", async () => {
@@ -18,7 +18,7 @@ test("escrow payment and payout flow", async () => {
   const code = "TEST-DEAL-" + Date.now();
   const deal = await one(`
     insert into deals(code, deal_type, seller_id, buyer_phone, buyer_name, address, product, price, delivery_charge, total_amount, fee_amount, seller_payout, deposit, status)
-    values($1, 'product', $2, '01799887766', 'Test Buyer', 'Dhaka', 'Test Headset', 5000, 100, 5100, 102, 4998, 5100, 'created')
+    values($1, 'product', $2, '01799887766', 'Test Buyer', 'Dhaka', 'Test Headset', 5000, 100, 5151, 51, 5100, 5151, 'created')
     returning *
   `, [code, seller.id]);
 

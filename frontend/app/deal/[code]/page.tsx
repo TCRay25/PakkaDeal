@@ -547,10 +547,10 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
 
                       <div className="text-left sm:text-right">
                         <span className="text-[11px] text-neutral-500 block uppercase font-semibold">
-                          {lang === "bn" ? "প্রদেয় অর্থ" : "Vault Amount"}
+                          {lang === "bn" ? "আপনার মোট পাওনা" : "Seller Payout"}
                         </span>
-                        <span className="text-xl font-mono font-extrabold text-neutral-900 dark:text-neutral-100">
-                          {deal.total_amount.toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
+                        <span className="text-xl font-mono font-extrabold text-emerald-600 dark:text-emerald-400">
+                          {(deal.seller_payout || deal.price).toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
                         </span>
                       </div>
                     </div>
@@ -596,8 +596,8 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                         <a
                           href={`https://wa.me/88${deal.buyer_phone.replace(/\D/g, "").slice(-11)}?text=${encodeURIComponent(
                             lang === "bn"
-                              ? `আসসালামু আলাইকুম ${deal.buyer_name}, পাক্কাডিল এসক্রোতে আপনার "${deal.product}" অর্ডারের ডিল তৈরি হয়েছে। মোট পরিমাণ: ${deal.total_amount} টাকা। অর্ডারটি নিশ্চিত করতে এসক্রোতে পেমেন্ট সম্পন্ন করুন: ${typeof window !== "undefined" ? window.location.href : ""}`
-                              : `Hello ${deal.buyer_name}, your escrow deal for "${deal.product}" is ready on PakkaDeal. Total: ${deal.total_amount} BDT. Please deposit into escrow to proceed: ${typeof window !== "undefined" ? window.location.href : ""}`
+                              ? `আসসালামু আলাইকুম ${deal.buyer_name}, পাক্কাডিল এসক্রোতে আপনার "${deal.product}" অর্ডারের ডিল তৈরি হয়েছে। মোট পরিশোধযোগ্য (এসক্রো চার্জ সহ): ${deal.total_amount} টাকা। অর্ডারটি নিশ্চিত করতে এসক্রোতে পেমেন্ট সম্পন্ন করুন: ${typeof window !== "undefined" ? window.location.href : ""}`
+                              : `Hello ${deal.buyer_name}, your escrow deal for "${deal.product}" is ready on PakkaDeal. Total to pay: ${deal.total_amount} BDT. Please deposit into escrow to proceed: ${typeof window !== "undefined" ? window.location.href : ""}`
                           )}`}
                           target="_blank"
                           rel="noopener noreferrer"
@@ -657,6 +657,13 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                         <div className="text-2xl font-extrabold text-neutral-900 dark:text-neutral-100 font-mono">
                           {deal.total_amount.toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
                         </div>
+                        {deal.fee_amount > 0 && (
+                          <div className="text-xs text-accent font-mono">
+                            {lang === "bn"
+                              ? `(পণ্যের মূল্য: ${deal.price.toLocaleString()} + ডেলিভারি: ${(deal.delivery_charge || 0).toLocaleString()} + ${deal.fee_percent || 1}% এসক্রো চার্জ: ${deal.fee_amount.toLocaleString()} টাকা)`
+                              : `(Price: ${deal.price.toLocaleString()} + Delivery: ${(deal.delivery_charge || 0).toLocaleString()} + ${deal.fee_percent || 1}% Escrow Fee: ${deal.fee_amount.toLocaleString()} BDT)`}
+                          </div>
+                        )}
                         <p className="text-xs text-neutral-600 dark:text-neutral-400">
                           {lang === "bn"
                             ? "টাকা সরাসরি পাক্কাডিল এসক্রো ভল্টে নিরাপদে জমা থাকবে। আপনি পণ্য হাতে পেয়ে যাচাই না করা পর্যন্ত বিক্রেতা কোনো টাকা পাবেন না।"
@@ -947,7 +954,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
 
         {/* Sidebar Column */}
         <div className="lg:col-span-4 space-y-6">
-          <MoneyBreakdown deal={deal} />
+          <MoneyBreakdown deal={deal} isSeller={me.is_seller} />
 
           {/* Counterparties Card */}
           <div className="box p-5 border border-neutral-200 dark:border-neutral-800 space-y-4">

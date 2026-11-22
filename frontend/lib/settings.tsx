@@ -19,7 +19,7 @@ export type PublicSettings = {
 };
 
 export const DEFAULT_PUBLIC_SETTINGS: PublicSettings = {
-  platform_fee_percent: "2",
+  platform_fee_percent: "1",
   platform_fee_min: "10",
   confirm_window_hours: "72",
   ship_within_hours: "48",
@@ -52,12 +52,12 @@ type SettingsContextType = {
 
 const SettingsContext = createContext<SettingsContextType>({
   settings: DEFAULT_PUBLIC_SETTINGS,
-  feePercent: 2,
+  feePercent: 1,
   feeMin: 10,
   confirmHours: 72,
   shipHours: 48,
-  calculateFee: (amount: number) => Math.max(10, Math.round((amount * 2) / 100)),
-  formatFeePercent: (lang?: string) => (lang === "bn" ? "২%" : "2%"),
+  calculateFee: (amount: number) => Math.max(10, Math.round((amount * 1) / 100)),
+  formatFeePercent: (lang?: string) => (lang === "bn" ? "১%" : "1%"),
   formatFeeMin: (lang?: string) => (lang === "bn" ? "১০ টাকা" : "10 BDT"),
   refreshSettings: async () => {},
 });
