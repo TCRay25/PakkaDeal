@@ -3,6 +3,7 @@ import { config, isDemoPhone } from "../config.js";
 import { one, q } from "../db.js";
 import { auth, fail, isAdmin, makeToken } from "../http.js";
 import { sendSms } from "../services/smsService.js";
+import { verifyFirebaseIdToken } from "../services/firebaseAdmin.js";
 
 const router = Router();
 export const PHONE = /^01[3-9]\d{8}$/;
@@ -88,6 +89,71 @@ router.post("/verify", async (req, res) => {
     // Delete OTP once verified
     await q("delete from otps where phone = $1", [cleanPhone]);
   }
+
+  let user = await one("select * from users where phone=$1", [cleanPhone]);
+  if (!user) {
+    user = await one(
+      `insert into users(phone, name, email, role, page_name, seller_trust, buyer_trust)
+       values($1, $2, $3, $4, $5, 75, 75) returning *`,
+      [
+        cleanPhone,
+        cleanName || "User " + cleanPhone.slice(-4),
+        cleanEmail,
+        cleanRole,
+        cleanShop,
+      ]
+    );
+  } else {
+    if (cleanName && !user.name) {
+      user = await one("update users set name=$2 where id=$1 returning *", [user.id, cleanName]);
+    }
+    if (cleanEmail && !user.email) {
+      user = await one("update users set email=$2 where id=$1 returning *", [user.id, cleanEmail]);
+    }
+    if (cleanShop && !user.page_name) {
+      user = await one("update users set page_name=$2 where id=$1 returning *", [user.id, cleanShop]);
+    }
+  }
+
+  if (user.is_suspended) {
+    return fail(403, "This account is suspended. Please contact PakkaDeal support.");
+  }
+
+  const isUserAdmin = isAdmin(user);
+  res.json({
+    token: makeToken(user.id),
+    user,
+    is_admin: isUserAdmin,
+  });
+});
+
+router.post("/firebase-login", async (req, res) => {
+  const { idToken, name = "", email = "", page_name = "", role = "user" } = req.body;
+  if (!idToken) {
+    return fail(400, "Firebase ID token is required");
+  }
+
+  let decoded;
+  try {
+    decoded = await verifyFirebaseIdToken(idToken);
+  } catch (err) {
+    return fail(401, `Firebase token verification failed: ${err.message}`);
+  }
+
+  const rawPhone = decoded.phone_number || "";
+  let cleanPhone = rawPhone.replace(/^\+88/, "").replace(/\D/g, "");
+  if (!cleanPhone && rawPhone) {
+    cleanPhone = rawPhone.replace(/\D/g, "").slice(-11);
+  }
+
+  if (!cleanPhone || !PHONE.test(cleanPhone)) {
+    return fail(400, "Valid Bangladeshi phone number not found in Firebase token");
+  }
+
+  const cleanName = (name || decoded.name || "").trim();
+  const cleanEmail = (email || decoded.email || "").trim().toLowerCase();
+  const cleanRole = (role || "").trim() || "user";
+  const cleanShop = (page_name || cleanName).trim();
 
   let user = await one("select * from users where phone=$1", [cleanPhone]);
   if (!user) {
