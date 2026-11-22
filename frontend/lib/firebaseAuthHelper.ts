@@ -31,6 +31,9 @@ export function translateFirebaseError(errCode: string, lang: string = "bn"): st
   const code = (errCode || "").toLowerCase();
 
   if (lang === "bn") {
+    if (code.includes("configuration-not-found")) {
+      return "Firebase Console-এ Phone Authentication সক্রিয় করা নেই! অনুগ্রহ করে Firebase Console -> Build -> Authentication -> Sign-in method-এ গিয়ে 'Phone' চালু (Enable) করে Save করুন।";
+    }
     if (code.includes("missing-config") || code.includes("invalid-api-key") || code.includes("api-key-not-valid")) {
       return "Firebase কনফিগারেশন মিসিং! অনুগ্রহ করে frontend/.env ফাইলে আপনার Firebase ক্রেডেনশিয়াল (NEXT_PUBLIC_FIREBASE_API_KEY ইত্যাদি) বসান।";
     }
@@ -70,6 +73,9 @@ export function translateFirebaseError(errCode: string, lang: string = "bn"): st
     return `ত্রুটি ঘটেছে (${errCode})। অনুগ্রহ করে Firebase কনফিগারেশন চেক করে আবার চেষ্টা করুন।`;
   }
 
+  if (code.includes("configuration-not-found")) {
+    return "Phone Authentication is not enabled in Firebase Console! Please go to Firebase Console -> Build -> Authentication -> Sign-in method and Enable Phone provider.";
+  }
   if (code.includes("missing-config") || code.includes("invalid-api-key") || code.includes("api-key-not-valid")) {
     return "Firebase configuration missing! Please add NEXT_PUBLIC_FIREBASE_API_KEY in frontend/.env.";
   }
