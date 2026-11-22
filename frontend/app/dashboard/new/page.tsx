@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { post } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
@@ -59,6 +60,8 @@ export default function CreateDealPage() {
     }
   }
 
+  const isProfileComplete = Boolean(user?.bkash_number);
+
   return (
     <div className="max-w-4xl space-y-8">
       <div className="border-b border-neutral-200 dark:border-neutral-800 pb-4">
@@ -67,6 +70,23 @@ export default function CreateDealPage() {
           {t("newDealSub")}
         </p>
       </div>
+
+      {!isProfileComplete && (
+        <div className="box p-5 border-2 border-amber-500 bg-amber-500/10 space-y-3">
+          <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-bold text-sm">
+            <span>⚠️</span>
+            <span>{lang === "bn" ? "প্রোফাইল অসম্পূর্ণ: বিকাশ অ্যাকাউন্ট যুক্ত করা আবশ্যক" : "Profile Incomplete: bKash Account Required"}</span>
+          </div>
+          <p className="text-xs text-neutral-600 dark:text-neutral-400">
+            {lang === "bn"
+              ? "এসক্রো ডিল তৈরি করার আগে অনুগ্রহ করে আপনার প্রোফাইলে বিকাশ অ্যাকাউন্ট নম্বর ও অ্যাকাউন্ট টাইপ যুক্ত করুন।"
+              : "Before creating an escrow deal, you must add your bKash payout number and account type in your profile."}
+          </p>
+          <Link href="/dashboard/profile" className="btn text-xs inline-block py-2 px-4">
+            {lang === "bn" ? "প্রোফাইল সম্পূর্ণ করুন →" : "Complete Profile →"}
+          </Link>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         <div className="lg:col-span-7 space-y-6">
@@ -273,8 +293,12 @@ export default function CreateDealPage() {
 
           {err && <p className="text-xs text-red-600 dark:text-red-400">{err}</p>}
 
-          <button type="submit" disabled={loading} className="btn w-full py-3 text-base">
-            {loading ? t("loading") : t("createDealBtn")}
+          <button type="submit" disabled={loading || !isProfileComplete} className="btn w-full py-3 text-base">
+            {!isProfileComplete
+              ? (lang === "bn" ? "প্রোফাইলে বিকাশ নম্বর যোগ করুন" : "Complete Profile to Create Deal")
+              : loading
+              ? t("loading")
+              : t("createDealBtn")}
           </button>
         </div>
 

@@ -5,10 +5,15 @@ import { api, getToken } from "./api";
 export type User = {
   id: number;
   phone: string;
+  uid?: string;
+  email?: string;
   name: string;
   role: string;
   page_name: string;
   page_url: string;
+  bkash_number?: string;
+  bkash_type?: string;
+  bkash_verified?: number;
   seller_trust: number;
   buyer_trust: number;
 };

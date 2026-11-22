@@ -47,3 +47,41 @@ test("escrow payment and payout flow", async () => {
   await q("delete from deal_events where deal_id = $1", [deal.id]);
   await q("delete from deals where id = $1", [deal.id]);
 });
+
+test("seller payout is blocked if seller's bkash is not verified", async () => {
+  await initDb();
+  // Create unverified seller
+  const unverified = await one(`
+    insert into users(phone, name, role, bkash_number, bkash_type, bkash_verified)
+    values('01799112233', 'Unverified Seller', 'seller', '01799112233', 'Personal', 0)
+    returning *
+  `);
+
+  const code = "UNVERIFIED-DEAL-" + Date.now();
+  const deal = await one(`
+    insert into deals(code, deal_type, seller_id, buyer_phone, buyer_name, address, product, price, delivery_charge, total_amount, fee_amount, seller_payout, deposit, status)
+    values($1, 'product', $2, '01799887766', 'Test Buyer', 'Dhaka', 'Test Item', 2000, 100, 2120, 20, 2100, 2120, 'delivered')
+    returning *
+  `, [code, unverified.id]);
+
+  // Attempt release to unverified seller should throw error
+  await assert.rejects(
+    async () => {
+      await releaseToSeller(deal, "buyer_confirmed");
+    },
+    /Seller bKash account is not verified by admin/
+  );
+
+  // Now verify the seller's bKash account
+  await q("update users set bkash_verified=1 where id=$1", [unverified.id]);
+
+  // Now release should succeed
+  const released = await releaseToSeller(deal, "buyer_confirmed");
+  assert.equal(released.status, "released");
+
+  // Clean up
+  await q("delete from ledger where deal_id = $1", [deal.id]);
+  await q("delete from deal_events where deal_id = $1", [deal.id]);
+  await q("delete from deals where id = $1", [deal.id]);
+  await q("delete from users where id = $1", [unverified.id]);
+});

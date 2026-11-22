@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from "firebase/app";
-import { getAuth, Auth } from "firebase/auth";
+import { getAuth, Auth, GoogleAuthProvider } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "",
@@ -12,6 +12,7 @@ const firebaseConfig = {
 
 let app: FirebaseApp | undefined;
 let auth: Auth | undefined;
+let googleProvider: GoogleAuthProvider | undefined;
 
 export function isFirebaseConfigured(): boolean {
   return Boolean(
@@ -35,6 +36,14 @@ export function getFirebaseAuth(): Auth {
     auth = getAuth(app);
   }
   return auth;
+}
+
+export function getGoogleProvider(): GoogleAuthProvider {
+  if (!googleProvider) {
+    googleProvider = new GoogleAuthProvider();
+    googleProvider.setCustomParameters({ prompt: "select_account" });
+  }
+  return googleProvider;
 }
 
 export { app, auth, firebaseConfig };

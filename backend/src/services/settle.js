@@ -346,6 +346,12 @@ export async function applyCourier(deal, status) {
 export async function releaseToSeller(deal, outcome = "buyer_confirmed", actor = "buyer", proofOpts = {}) {
   assertTransition(deal.status, "released", actor);
 
+  // Requirement: Seller bKash must be verified by admin before payout can be released
+  const seller = await one("select * from users where id=$1", [deal.seller_id]);
+  if (!seller || !seller.bkash_verified) {
+    throw new Error("Seller bKash account is not verified by admin. Payout cannot be released until seller's bKash is verified.");
+  }
+
   const payout = deal.seller_payout || (deal.price + (deal.delivery_charge || 0));
   const fee = deal.fee_amount || Math.max(0, deal.total_amount - payout);
 
@@ -593,6 +599,11 @@ export async function applyHandoverConfirmation(deal, user) {
 
 /** Admin Force Release */
 export async function adminForceRelease(deal, adminNotes = "", actor = "admin") {
+  const seller = await one("select * from users where id=$1", [deal.seller_id]);
+  if (!seller || !seller.bkash_verified) {
+    throw new Error("Seller bKash account is not verified by admin. Payout cannot be released until seller's bKash is verified.");
+  }
+
   const payout = deal.seller_payout || (deal.price + (deal.delivery_charge || 0));
   const fee = deal.fee_amount || Math.max(0, deal.total_amount - payout);
 

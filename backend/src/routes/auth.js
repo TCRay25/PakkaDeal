@@ -128,7 +128,7 @@ router.post("/verify", async (req, res) => {
 });
 
 router.post("/firebase-login", async (req, res) => {
-  const { idToken, name = "", email = "", page_name = "", role = "user" } = req.body;
+  const { idToken, bkash_number = "", bkash_type = "Personal", name = "", email = "", page_name = "", role = "seller" } = req.body;
   if (!idToken) {
     return fail(400, "Firebase ID token is required");
   }
@@ -140,43 +140,75 @@ router.post("/firebase-login", async (req, res) => {
     return fail(401, `Firebase token verification failed: ${err.message}`);
   }
 
-  const rawPhone = decoded.phone_number || "";
-  let cleanPhone = rawPhone.replace(/^\+88/, "").replace(/\D/g, "");
-  if (!cleanPhone && rawPhone) {
-    cleanPhone = rawPhone.replace(/\D/g, "").slice(-11);
+  // Enforce email verification (Google sign-in is auto-verified by Firebase)
+  if (!decoded.email_verified) {
+    return fail(403, "Email is not verified. Please verify your email before accessing your account.");
   }
 
-  if (!cleanPhone || !PHONE.test(cleanPhone)) {
-    return fail(400, "Valid Bangladeshi phone number not found in Firebase token");
-  }
-
-  const cleanName = (name || decoded.name || "").trim();
-  const cleanEmail = (email || decoded.email || "").trim().toLowerCase();
-  const cleanRole = (role || "").trim() || "user";
+  const uid = decoded.uid;
+  const decodedEmail = (decoded.email || email || "").trim().toLowerCase();
+  const cleanName = (name || decoded.name || (decodedEmail ? decodedEmail.split("@")[0] : "User")).trim();
+  const cleanBkash = (bkash_number || "").trim();
+  const validBkashTypes = ["Personal", "Merchant", "Agent"];
+  const cleanBkashType = validBkashTypes.includes(bkash_type) ? bkash_type : "Personal";
+  const cleanRole = (role || "").trim() || "seller";
   const cleanShop = (page_name || cleanName).trim();
 
-  let user = await one("select * from users where phone=$1", [cleanPhone]);
+  if (cleanBkash && !PHONE.test(cleanBkash)) {
+    return fail(400, "Enter a valid 11-digit Bangladeshi bKash number (e.g. 017XXXXXXXX)");
+  }
+
+  // Find user by Firebase UID or registered email
+  let user = await one(
+    "select * from users where (uid != '' and uid = $1) or (email != '' and email = $2)",
+    [uid, decodedEmail]
+  );
+
   if (!user) {
+    // New user registration
+    const userPhone = cleanBkash || `uid_${uid.slice(-10)}`;
     user = await one(
-      `insert into users(phone, name, email, role, page_name, seller_trust, buyer_trust)
-       values($1, $2, $3, $4, $5, 75, 75) returning *`,
+      `insert into users(uid, phone, name, email, bkash_number, bkash_type, bkash_verified, role, page_name, seller_trust, buyer_trust)
+       values($1, $2, $3, $4, $5, $6, 0, $7, $8, 75, 75) returning *`,
       [
-        cleanPhone,
-        cleanName || "User " + cleanPhone.slice(-4),
-        cleanEmail,
+        uid,
+        userPhone,
+        cleanName,
+        decodedEmail,
+        cleanBkash,
+        cleanBkashType,
         cleanRole,
         cleanShop,
       ]
     );
   } else {
-    if (cleanName && !user.name) {
-      user = await one("update users set name=$2 where id=$1 returning *", [user.id, cleanName]);
+    // Existing user login/update
+    if (!user.uid && uid) {
+      await q("update users set uid=$2 where id=$1", [user.id, uid]);
+      user.uid = uid;
     }
-    if (cleanEmail && !user.email) {
-      user = await one("update users set email=$2 where id=$1 returning *", [user.id, cleanEmail]);
+    if (!user.email && decodedEmail) {
+      await q("update users set email=$2 where id=$1", [user.id, decodedEmail]);
+      user.email = decodedEmail;
+    }
+    if (cleanName && (!user.name || user.name.startsWith("User "))) {
+      await q("update users set name=$2 where id=$1", [user.id, cleanName]);
+      user.name = cleanName;
     }
     if (cleanShop && !user.page_name) {
-      user = await one("update users set page_name=$2 where id=$1 returning *", [user.id, cleanShop]);
+      await q("update users set page_name=$2 where id=$1", [user.id, cleanShop]);
+      user.page_name = cleanShop;
+    }
+    // If bKash info provided and previously unset or changed
+    if (cleanBkash && cleanBkash !== user.bkash_number) {
+      await q(
+        "update users set bkash_number=$2, bkash_type=$3, bkash_verified=0, phone=$2 where id=$1",
+        [user.id, cleanBkash, cleanBkashType]
+      );
+      user.bkash_number = cleanBkash;
+      user.bkash_type = cleanBkashType;
+      user.bkash_verified = 0;
+      user.phone = cleanBkash;
     }
   }
 
@@ -189,6 +221,7 @@ router.post("/firebase-login", async (req, res) => {
     token: makeToken(user.id),
     user,
     is_admin: isUserAdmin,
+    profile_complete: Boolean(user.bkash_number),
   });
 });
 

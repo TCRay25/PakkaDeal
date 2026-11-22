@@ -108,8 +108,12 @@ export async function initDb() {
       create table if not exists users (
         id integer primary key autoincrement,
         phone text unique not null,
+        uid text not null default '',
         name text not null default '',
         email text not null default '',
+        bkash_number text not null default '',
+        bkash_type text not null default 'Personal',
+        bkash_verified int not null default 0,
         role text not null default 'seller',
         page_name text not null default '',
         page_url text not null default '',
@@ -296,8 +300,12 @@ export async function initDb() {
       create table if not exists users (
         id serial primary key,
         phone text unique not null,
+        uid text not null default '',
         name text not null default '',
         email text not null default '',
+        bkash_number text not null default '',
+        bkash_type text not null default 'Personal',
+        bkash_verified int not null default 0,
         role text not null default 'seller',
         page_name text not null default '',
         page_url text not null default '',
@@ -556,7 +564,11 @@ async function runMigrations() {
 
       const userCols = db.prepare("pragma table_info(users)").all().map(c => c.name);
       const neededUserCols = [
+        ["uid", "text not null default ''"],
         ["email", "text not null default ''"],
+        ["bkash_number", "text not null default ''"],
+        ["bkash_type", "text not null default 'Personal'"],
+        ["bkash_verified", "int not null default 0"],
         ["page_name", "text not null default ''"],
         ["page_url", "text not null default ''"],
         ["seller_trust", "int not null default 70"],
@@ -628,6 +640,7 @@ async function runMigrations() {
       db.exec(`update deals set seller_payout = max(total_amount - fee_amount, 0) where (seller_payout is null or seller_payout = 0) and total_amount > 0`);
       db.exec(`update deals set fee_percent = round(cast(fee_amount as real) * 100.0 / total_amount, 1) where total_amount > 0 and (fee_percent is null or fee_percent = 0)`);
       db.exec(`update settings set value='1' where key='platform_fee_percent' and value='2'`);
+      db.exec(`update users set bkash_number=phone, bkash_type='Merchant', bkash_verified=1 where phone in ('01700000000', '01711223344', '01811223344', '01911223344') and (bkash_number is null or bkash_number='' or bkash_verified=0)`);
     } else if (pgPool) {
       const neededDealCols = [
         ["deal_type", "text not null default 'product'"],
@@ -713,7 +726,11 @@ async function runMigrations() {
       }
 
       const neededUserCols = [
+        ["uid", "text not null default ''"],
         ["email", "text not null default ''"],
+        ["bkash_number", "text not null default ''"],
+        ["bkash_type", "text not null default 'Personal'"],
+        ["bkash_verified", "int not null default 0"],
         ["page_name", "text not null default ''"],
         ["page_url", "text not null default ''"],
         ["seller_trust", "int not null default 70"],
@@ -769,6 +786,7 @@ async function runMigrations() {
       await pgPool.query(`update deals set seller_payout = greatest(total_amount - fee_amount, 0) where (seller_payout is null or seller_payout = 0) and total_amount > 0`);
       await pgPool.query(`update deals set fee_percent = round(cast(fee_amount as numeric) * 100.0 / nullif(total_amount, 0), 1) where total_amount > 0 and (fee_percent is null or fee_percent = 0)`);
       await pgPool.query(`update settings set value='1' where key='platform_fee_percent' and value='2'`);
+      await pgPool.query(`update users set bkash_number=phone, bkash_type='Merchant', bkash_verified=1 where phone in ('01700000000', '01711223344', '01811223344', '01911223344') and (bkash_number is null or bkash_number='' or bkash_verified=0)`);
     }
   } catch (migErr) {
     console.warn("Migration warning:", migErr.message);
@@ -810,17 +828,17 @@ async function seedInitialData() {
   const userCount = Number((await one("select count(*) as cnt from users"))?.cnt || 0);
   if (userCount === 0) {
     console.log("Seeding initial PakkaDeal demo data...");
-    await q(`insert into users(phone, name, role, page_name, page_url, seller_trust, buyer_trust)
-      values('01700000000', 'PakkaDeal Admin', 'seller', 'PakkaDeal Official Support', 'https://facebook.com/pakkadeal', 100, 100)`);
+    await q(`insert into users(phone, name, role, page_name, page_url, bkash_number, bkash_type, bkash_verified, seller_trust, buyer_trust)
+      values('01700000000', 'PakkaDeal Admin', 'seller', 'PakkaDeal Official Support', 'https://facebook.com/pakkadeal', '01700000000', 'Merchant', 1, 100, 100)`);
 
-    const s1 = await one(`insert into users(phone, name, role, page_name, page_url, seller_trust, buyer_trust)
-      values('01711223344', 'Rahim Chowdhury', 'seller', 'Gadget Corner BD', 'https://facebook.com/gadgetcornerbd', 95, 80) returning id`);
+    const s1 = await one(`insert into users(phone, name, role, page_name, page_url, bkash_number, bkash_type, bkash_verified, seller_trust, buyer_trust)
+      values('01711223344', 'Rahim Chowdhury', 'seller', 'Gadget Corner BD', 'https://facebook.com/gadgetcornerbd', '01711223344', 'Merchant', 1, 95, 80) returning id`);
 
-    const s2 = await one(`insert into users(phone, name, role, page_name, page_url, seller_trust, buyer_trust)
-      values('01811223344', 'Tanvir Ahmed', 'seller', 'Dhaka Fashion Hub', 'https://facebook.com/dhakafashion', 82, 70) returning id`);
+    const s2 = await one(`insert into users(phone, name, role, page_name, page_url, bkash_number, bkash_type, bkash_verified, seller_trust, buyer_trust)
+      values('01811223344', 'Tanvir Ahmed', 'seller', 'Dhaka Fashion Hub', 'https://facebook.com/dhakafashion', '01811223344', 'Personal', 1, 82, 70) returning id`);
 
-    const s3 = await one(`insert into users(phone, name, role, page_name, page_url, seller_trust, buyer_trust)
-      values('01911223344', 'Kamal Hossain (Landlord)', 'seller', 'Dhanmondi Rentals & Studio', 'https://facebook.com/dhanmondirentals', 90, 85) returning id`);
+    const s3 = await one(`insert into users(phone, name, role, page_name, page_url, bkash_number, bkash_type, bkash_verified, seller_trust, buyer_trust)
+      values('01911223344', 'Kamal Hossain (Landlord)', 'seller', 'Dhanmondi Rentals & Studio', 'https://facebook.com/dhanmondirentals', '01911223344', 'Personal', 1, 90, 85) returning id`);
 
     await q(`insert into users(phone, name, role, page_name, page_url, seller_trust, buyer_trust)
       values('01755667788', 'Nusrat Jahan', 'buyer', '', '', 70, 92)`);

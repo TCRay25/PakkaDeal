@@ -2,6 +2,7 @@ import { Router } from "express";
 import { one, q } from "../db.js";
 import { auth, fail } from "../http.js";
 import { getBuyer } from "../services/trust.js";
+import { PHONE } from "./auth.js";
 
 const router = Router();
 
@@ -70,18 +71,49 @@ router.get("/me", auth, async (req, res) => {
 });
 
 router.patch("/me", auth, async (req, res) => {
-  const { name, page_name, page_url } = req.body;
+  const { name, page_name, page_url, bkash_number, bkash_type } = req.body;
+
+  let cleanBkash = undefined;
+  if (bkash_number !== undefined) {
+    cleanBkash = String(bkash_number).trim();
+    if (cleanBkash && !PHONE.test(cleanBkash)) {
+      return fail(400, "Enter a valid 11-digit Bangladeshi bKash number (e.g. 017XXXXXXXX)");
+    }
+  }
+
+  let cleanBkashType = undefined;
+  if (bkash_type !== undefined) {
+    const validBkashTypes = ["Personal", "Merchant", "Agent"];
+    cleanBkashType = validBkashTypes.includes(bkash_type) ? bkash_type : "Personal";
+  }
+
+  const currentUser = await one("select * from users where id=$1", [req.user.id]);
+  if (!currentUser) return fail(404, "User not found");
+
+  // If bKash number is updated or changed, bkash_verified resets to 0 (false)
+  const bkashChanged = cleanBkash !== undefined && cleanBkash !== currentUser.bkash_number;
+  const newVerified = bkashChanged ? 0 : currentUser.bkash_verified;
+  const newPhone = cleanBkash ? cleanBkash : currentUser.phone;
+
   const user = await one(
     `update users set
        name = coalesce($2, name),
        page_name = coalesce($3, page_name),
-       page_url = coalesce($4, page_url)
+       page_url = coalesce($4, page_url),
+       bkash_number = coalesce($5, bkash_number),
+       bkash_type = coalesce($6, bkash_type),
+       bkash_verified = $7,
+       phone = coalesce($8, phone)
      where id=$1 returning *`,
     [
       req.user.id,
       name !== undefined ? String(name).slice(0, 80).trim() : null,
       page_name !== undefined ? String(page_name).slice(0, 80).trim() : null,
       page_url !== undefined ? String(page_url).slice(0, 255).trim() : null,
+      cleanBkash !== undefined ? cleanBkash : null,
+      cleanBkashType !== undefined ? cleanBkashType : null,
+      newVerified,
+      newPhone,
     ]
   );
   res.json({ user });

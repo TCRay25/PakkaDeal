@@ -210,6 +210,10 @@ router.get("/", auth, async (req, res) => {
 });
 
 router.post("/", auth, async (req, res) => {
+  if (!req.user.bkash_number) {
+    fail(400, "Please complete your profile by adding your bKash account number and type before creating deals.");
+  }
+
   const b = req.body;
   const dealType = ["product", "rental", "service"].includes(b.deal_type) ? b.deal_type : "product";
   const price = Math.round(Number(b.price));

@@ -173,8 +173,9 @@ router.get("/users", async (req, res) => {
   const { q: search } = req.query;
   const adminPhones = config.adminPhones || ["01700000000"];
   let query = `
-    select u.id, u.phone, u.name, u.role, u.page_name, u.page_url, u.seller_trust, u.buyer_trust,
-           u.is_suspended, u.created_at,
+    select u.id, u.phone, u.uid, u.name, u.email, u.role, u.page_name, u.page_url,
+           u.bkash_number, u.bkash_type, u.bkash_verified,
+           u.seller_trust, u.buyer_trust, u.is_suspended, u.created_at,
            (select count(*) from deals where seller_id = u.id) as seller_deals_count,
            (select count(*) from deals where buyer_phone = u.phone) as buyer_deals_count
     from users u
@@ -189,7 +190,7 @@ router.get("/users", async (req, res) => {
   query += ` and lower(coalesce(u.role, '')) != 'admin' and lower(coalesce(u.name, '')) not like '%admin%'`;
   if (search) {
     params.push(`%${search}%`);
-    query += ` and (u.phone like $${params.length} or u.name like $${params.length} or u.page_name like $${params.length})`;
+    query += ` and (u.phone like $${params.length} or u.name like $${params.length} or u.page_name like $${params.length} or u.email like $${params.length} or u.bkash_number like $${params.length})`;
   }
   query += ` order by u.id desc limit 100`;
   const rows = await q(query, params);
@@ -205,6 +206,14 @@ router.post("/users/:id/suspend", async (req, res) => {
   const nextState = user.is_suspended ? 0 : 1;
   await q("update users set is_suspended=$2 where id=$1", [user.id, nextState]);
   res.json({ ok: true, is_suspended: !!nextState });
+});
+
+router.post("/users/:id/verify-bkash", async (req, res) => {
+  const user = await one("select * from users where id=$1", [req.params.id]);
+  if (!user) fail(404, "User not found");
+  const nextState = user.bkash_verified ? 0 : 1;
+  await q("update users set bkash_verified=$2 where id=$1", [user.id, nextState]);
+  res.json({ ok: true, bkash_verified: !!nextState });
 });
 
 router.get("/ledger", async (req, res) => {
