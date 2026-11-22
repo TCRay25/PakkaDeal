@@ -22,7 +22,7 @@ type AuthContextType = {
   user: User | null;
   isAdmin: boolean;
   ready: boolean;
-  login: (token: string) => Promise<void>;
+  login: (token: string, initialUser?: User, initialIsAdmin?: boolean) => Promise<void>;
   logout: () => void;
   refresh: () => Promise<void>;
 };
@@ -57,8 +57,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     load();
   }, []);
 
-  const login = async (token: string) => {
+  const login = async (token: string, initialUser?: User, initialIsAdmin?: boolean) => {
     localStorage.setItem("token", token);
+    if (initialUser) {
+      setUser(initialUser);
+      setAdmin(!!initialIsAdmin);
+      setReady(true);
+    }
     await load();
   };
 

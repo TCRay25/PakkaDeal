@@ -21,7 +21,7 @@ import {
 
 export default function RegisterPage() {
   const { t, lang } = useI18n();
-  const { login } = useAuth();
+  const { user, isAdmin, ready, login } = useAuth();
   const router = useRouter();
 
   // Form State
@@ -41,6 +41,17 @@ export default function RegisterPage() {
   // References for created user in email flow or Google user
   const [registeredFirebaseUser, setRegisteredFirebaseUser] = useState<User | null>(null);
   const [googleUser, setGoogleUser] = useState<User | null>(null);
+
+  // Auto-redirect if already logged in
+  useEffect(() => {
+    if (ready && user) {
+      if (isAdmin) {
+        router.replace("/admin");
+      } else {
+        router.replace("/dashboard");
+      }
+    }
+  }, [ready, user, isAdmin, router]);
 
   // 60-second countdown timer for resend verification email
   useEffect(() => {
@@ -86,8 +97,8 @@ export default function RegisterPage() {
 
         if (res.profile_complete && res.user.bkash_number) {
           // Already has bKash number, log in directly
-          await login(res.token);
-          router.push("/dashboard");
+          await login(res.token, res.user, res.is_admin);
+          router.replace(res.is_admin ? "/admin" : "/dashboard");
           return;
         }
       } catch (_checkErr) {
@@ -135,8 +146,8 @@ export default function RegisterPage() {
         role: "seller",
       });
 
-      await login(res.token);
-      router.push("/dashboard");
+      await login(res.token, res.user, res.is_admin);
+      router.replace(res.is_admin ? "/admin" : "/dashboard");
     } catch (x: any) {
       console.error("Google complete profile error:", x);
       setErr(x.message || translateFirebaseError(x.code || x.message, lang));
@@ -247,8 +258,8 @@ export default function RegisterPage() {
         role: "seller",
       });
 
-      await login(res.token);
-      router.push("/dashboard");
+      await login(res.token, res.user, res.is_admin);
+      router.replace(res.is_admin ? "/admin" : "/dashboard");
     } catch (x: any) {
       console.error("Verification confirmation error:", x);
       setErr(x.message || translateFirebaseError(x.code || x.message, lang));

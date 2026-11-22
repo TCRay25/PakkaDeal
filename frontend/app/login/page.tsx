@@ -19,7 +19,7 @@ import {
 
 export default function LoginPage() {
   const { t, lang } = useI18n();
-  const { login } = useAuth();
+  const { user, isAdmin, ready, login } = useAuth();
   const router = useRouter();
 
   // Form State
@@ -40,6 +40,17 @@ export default function LoginPage() {
   // Active Firebase user reference during verification or profile completion
   const [activeFirebaseUser, setActiveFirebaseUser] = useState<User | null>(null);
 
+  // Auto-redirect if already logged in
+  useEffect(() => {
+    if (ready && user) {
+      if (isAdmin) {
+        router.replace("/admin");
+      } else {
+        router.replace("/dashboard");
+      }
+    }
+  }, [ready, user, isAdmin, router]);
+
   // 60-second countdown timer for resend email
   useEffect(() => {
     if (countdown <= 0) return;
@@ -51,14 +62,11 @@ export default function LoginPage() {
 
   const isBkashValid = validateBkashNumber(bkashNumber);
 
-  // Finish session login and navigate
-  function finishLogin(r: { token: string; is_admin: boolean; profile_complete?: boolean; user?: any }) {
-    login(r.token);
-    if (r.is_admin) {
-      router.push("/admin");
-    } else {
-      router.push("/dashboard");
-    }
+  // Finish session login and navigate immediately
+  async function finishLogin(r: { token: string; is_admin: boolean; profile_complete?: boolean; user?: any }) {
+    await login(r.token, r.user, r.is_admin);
+    const destination = r.is_admin ? "/admin" : "/dashboard";
+    router.replace(destination);
   }
 
   // Handle Google Sign In
@@ -93,7 +101,7 @@ export default function LoginPage() {
         return;
       }
 
-      finishLogin(res);
+      await finishLogin(res);
     } catch (x: any) {
       console.error("Google sign in error:", x);
       setErr(translateFirebaseError(x.code || x.message, lang));
@@ -143,7 +151,7 @@ export default function LoginPage() {
         return;
       }
 
-      finishLogin(res);
+      await finishLogin(res);
     } catch (x: any) {
       console.error("Email sign in error:", x);
       setErr(translateFirebaseError(x.code || x.message, lang));
@@ -197,7 +205,7 @@ export default function LoginPage() {
         return;
       }
 
-      finishLogin(res);
+      await finishLogin(res);
     } catch (x: any) {
       console.error("Check verification error:", x);
       setErr(x.message || translateFirebaseError(x.code || x.message, lang));
@@ -235,7 +243,7 @@ export default function LoginPage() {
         page_name: pageName.trim(),
       });
 
-      finishLogin(res);
+      await finishLogin(res);
     } catch (x: any) {
       console.error("Complete profile error:", x);
       setErr(x.message || translateFirebaseError(x.code || x.message, lang));
@@ -254,7 +262,7 @@ export default function LoginPage() {
         otp: "123456",
         name: demoName,
       });
-      finishLogin(r);
+      await finishLogin(r);
     } catch (x: any) {
       setErr(x.message || "Demo login failed");
     } finally {
