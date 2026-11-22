@@ -108,6 +108,69 @@ export default function AdminOverviewPage() {
         </p>
       </div>
 
+      {/* Action Queue Highlights */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <Link
+          href="/admin/payments"
+          className="box p-4 border-2 border-amber-500/40 bg-amber-500/5 hover:border-amber-500 transition-colors space-y-1 block"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs uppercase font-bold text-amber-700 dark:text-amber-400">
+              {t("pendingPayments")}
+            </span>
+            <span className="px-2 py-0.5 text-xs font-bold font-mono bg-amber-500 text-white">
+              {data?.pending_payments || 0}
+            </span>
+          </div>
+          <div className="text-2xl font-extrabold font-mono text-neutral-900 dark:text-neutral-100">
+            {data?.pending_payments || 0} {lang === "bn" ? "টি যাচাই বাকি" : "awaiting verify"}
+          </div>
+          <span className="text-xs text-neutral-500 block">
+            {lang === "bn" ? "বায়ারদের সাবমিট করা TrxID ও পেমেন্ট যাচাই করুন →" : "Verify buyer submitted bKash TrxID →"}
+          </span>
+        </Link>
+
+        <Link
+          href="/admin/payouts"
+          className="box p-4 border-2 border-emerald-500/40 bg-emerald-500/5 hover:border-emerald-500 transition-colors space-y-1 block"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs uppercase font-bold text-emerald-700 dark:text-emerald-400">
+              {t("pendingPayouts")}
+            </span>
+            <span className="px-2 py-0.5 text-xs font-bold font-mono bg-emerald-600 text-white">
+              {data?.pending_payouts || 0}
+            </span>
+          </div>
+          <div className="text-2xl font-extrabold font-mono text-neutral-900 dark:text-neutral-100">
+            {data?.pending_payouts || 0} {lang === "bn" ? "টি পেআউট বাকি" : "pending payout"}
+          </div>
+          <span className="text-xs text-neutral-500 block">
+            {lang === "bn" ? "ডেলিভারি সম্পন্ন ডিলের সেলারদের টাকা পরিশোধ করুন →" : "Disburse funds to verified sellers →"}
+          </span>
+        </Link>
+
+        <Link
+          href="/admin/returns"
+          className="box p-4 border-2 border-rose-500/40 bg-rose-500/5 hover:border-rose-500 transition-colors space-y-1 block"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs uppercase font-bold text-rose-700 dark:text-rose-400">
+              {t("returnsManagement")}
+            </span>
+            <span className="px-2 py-0.5 text-xs font-bold font-mono bg-rose-600 text-white">
+              {data?.active_returns || 0}
+            </span>
+          </div>
+          <div className="text-2xl font-extrabold font-mono text-neutral-900 dark:text-neutral-100">
+            {data?.active_returns || 0} {lang === "bn" ? "টি রিটার্ন/রিফান্ড" : "returns / refunds"}
+          </div>
+          <span className="text-xs text-neutral-500 block">
+            {lang === "bn" ? "ক্ষতিপূরণ ও বায়ার রিফান্ড পরিচালনা করুন →" : "Handle shipping compensation & refunds →"}
+          </span>
+        </Link>
+      </div>
+
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="box p-5 border border-neutral-200 dark:border-neutral-800 space-y-1">

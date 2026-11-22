@@ -346,9 +346,20 @@ router.post("/:code/pay", optionalAuth, async (req, res) => {
   const paymentMethod = (req.body.payment_method || "bKash").trim();
   const senderNumber = (req.body.sender_number || req.user?.phone || deal.buyer_phone).trim();
   const trxId = (req.body.trx_id || `MOCK-${Date.now().toString(36).toUpperCase()}`).trim();
+  const amountPaid = Math.round(Number(req.body.amount || deal.total_amount));
+  const cleanTrxId = trxId.toUpperCase();
 
   if (senderNumber && !PHONE.test(senderNumber)) {
     fail(400, "Please provide a valid 11-digit sender phone number");
+  }
+
+  // Security: Prevent duplicate TrxID across deals
+  const duplicate = await one(
+    "select id, code from deals where payment_trx_id = $1 and id != $2 and payment_status != 'rejected'",
+    [cleanTrxId, deal.id]
+  );
+  if (duplicate) {
+    fail(400, `এই TrxID (${cleanTrxId}) ইতিমধ্যে #${duplicate.code} নম্বর ডিলে ব্যবহার করা হয়েছে। অন্য TrxID দিন।`);
   }
 
   // Ensure buyer user exists in `users` table
@@ -370,10 +381,57 @@ router.post("/:code/pay", optionalAuth, async (req, res) => {
     deal.buyer_id = buyerUser.id;
   }
 
-  const updated = await applyPayment(deal, { paymentMethod, senderNumber, trxId });
-  const viewData = await view(updated, req.user || buyerUser);
+  const isSimulated = req.query.simulate === "true" || req.body.simulate === true;
+  let updated;
 
-  // If visitor was not logged in, return JWT token so they are immediately authenticated as the buyer!
+  if (isSimulated) {
+    // Direct simulation moves immediately to held
+    updated = await applyPayment(deal, { paymentMethod, senderNumber, trxId: cleanTrxId });
+  } else {
+    // Normal escrow flow: submits to Pending Payments for admin verification
+    await q(
+      `update deals set
+         status = 'payment_pending',
+         payment_status = 'pending',
+         payment_method = $2,
+         payment_sender = $3,
+         payment_trx_id = $4,
+         payment_amount = $5,
+         payment_submitted_at = CURRENT_TIMESTAMP,
+         updated_at = CURRENT_TIMESTAMP
+       where id = $1`,
+      [deal.id, paymentMethod, senderNumber, cleanTrxId, amountPaid]
+    );
+
+    await log(
+      deal.id,
+      "payment_submitted",
+      `Buyer submitted payment via ${paymentMethod} (${amountPaid} BDT, TrxID: ${cleanTrxId}, Sender: ${senderNumber}). Awaiting admin verification.`,
+      {
+        fromStatus: deal.status,
+        toStatus: "payment_pending",
+        actor: "buyer",
+      }
+    );
+
+    await notify(
+      deal.buyer_phone,
+      `PakkaDeal #${deal.code}: আপনার পেমেন্ট সাবমিশন গৃহীত হয়েছে (TrxID: ${cleanTrxId}, ${amountPaid.toLocaleString()} BDT)। অ্যাডমিন ভেরিফিকেশন সম্পন্ন হলে ফান্ড এসক্রোতে লক হবে।`,
+      "Payment Submitted",
+      deal.code
+    );
+
+    await notifySeller(
+      deal.seller_id,
+      `PakkaDeal #${deal.code}: ক্রেতা পেমেন্ট সাবমিট করেছেন (TrxID: ${cleanTrxId})। অ্যাডমিন ভেরিফিকেশন সম্পন্ন হওয়া মাত্র পার্সেল পাঠানোর নির্দেশনা পাবেন।`,
+      "Payment Submitted by Buyer",
+      deal.code
+    );
+
+    updated = await one("select * from deals where id=$1", [deal.id]);
+  }
+
+  const viewData = await view(updated, req.user || buyerUser);
   const token = req.user ? null : makeToken(buyerUser.id);
 
   res.json({

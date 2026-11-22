@@ -124,6 +124,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
   const [payMethod, setPayMethod] = useState<"bKash" | "Nagad" | "Rocket" | "Bank">("bKash");
   const [senderPhone, setSenderPhone] = useState("");
   const [trxId, setTrxId] = useState("");
+  const [payAmount, setPayAmount] = useState("");
   const [copiedNumber, setCopiedNumber] = useState(false);
 
   const load = () => {
@@ -221,6 +222,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
         payment_method: payMethod,
         sender_number: effectiveSender,
         trx_id: trxId.trim(),
+        amount: Number(payAmount) || deal.total_amount,
       });
       if (res?.token) {
         localStorage.setItem("token", res.token);
@@ -440,6 +442,27 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                 {lang === "bn" ? "ভল্ট:" : "Vault:"} {deal.total_amount.toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
               </span>
             </div>
+
+            {/* BUYER PAYMENT PENDING REVIEW BANNER */}
+            {deal.payment_status === "pending" && (
+              <div className="p-4 border-2 border-amber-500 bg-amber-500/10 dark:bg-amber-950/20 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 bg-amber-500 animate-pulse" />
+                  <span className="text-xs font-extrabold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+                    {t("paymentPendingReview")}
+                  </span>
+                </div>
+                <p className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed">
+                  {t("paymentSubmittedNotice")}
+                </p>
+                <div className="flex flex-wrap items-center gap-3 text-xs font-mono text-neutral-600 dark:text-neutral-400 pt-1">
+                  <span>TrxID: <strong className="text-neutral-900 dark:text-neutral-100">{deal.payment_trx_id}</strong></span>
+                  {(deal.payment_amount ?? 0) > 0 && (
+                    <span>| {lang === "bn" ? "জমাকৃত টাকা:" : "Amount:"} <strong className="text-neutral-900 dark:text-neutral-100">{Number(deal.payment_amount).toLocaleString()} BDT</strong></span>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* SELLER & BUYER ESCROW VAULT HELD CONFIRMATION CARD */}
             {isFundsHeld && (
@@ -1101,44 +1124,65 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
               </p>
             </div>
 
-            {/* Inputs: Sender Number & TrxID */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Inputs: Amount, Sender Number & TrxID */}
+            <div className="space-y-3">
               <div>
-                <label htmlFor="pay-sender-phone">{t("senderPhone")}</label>
+                <label htmlFor="pay-amount-input">{lang === "bn" ? "প্রেরিত টাকার পরিমাণ (BDT)" : "Paid Amount (BDT)"} *</label>
                 <input
-                  id="pay-sender-phone"
+                  id="pay-amount-input"
+                  type="number"
                   required
-                  value={senderPhone || user?.phone || deal.buyer_phone}
-                  onChange={(e) => setSenderPhone(e.target.value)}
-                  placeholder="e.g. 017XXXXXXXX"
+                  value={payAmount || String(deal.total_amount)}
+                  onChange={(e) => setPayAmount(e.target.value)}
+                  placeholder={String(deal.total_amount)}
                   className="font-mono text-sm"
                 />
-                <span className="text-[11px] text-neutral-500 mt-0.5 block">{t("senderPhoneHelp")}</span>
+                <span className="text-[11px] text-neutral-500 mt-0.5 block">
+                  {lang === "bn"
+                    ? `ডিলের মোট পাওনা: ${deal.total_amount.toLocaleString()} টাকা`
+                    : `Expected deal total: ${deal.total_amount.toLocaleString()} BDT`}
+                </span>
               </div>
 
-              <div>
-                <div className="flex justify-between items-center">
-                  <label htmlFor="pay-trx-id">{t("trxId")}</label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTrxId("TX-" + Date.now().toString(36).toUpperCase());
-                      if (!senderPhone) setSenderPhone(deal.buyer_phone);
-                    }}
-                    className="text-[10px] text-accent underline hover:text-black dark:hover:text-white"
-                  >
-                    ⚡ {lang === "bn" ? "ডেমো TrxID" : "Demo TrxID"}
-                  </button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="pay-sender-phone">{t("senderPhone")}</label>
+                  <input
+                    id="pay-sender-phone"
+                    required
+                    value={senderPhone || user?.phone || deal.buyer_phone}
+                    onChange={(e) => setSenderPhone(e.target.value)}
+                    placeholder="e.g. 017XXXXXXXX"
+                    className="font-mono text-sm"
+                  />
+                  <span className="text-[11px] text-neutral-500 mt-0.5 block">{t("senderPhoneHelp")}</span>
                 </div>
-                <input
-                  id="pay-trx-id"
-                  required
-                  value={trxId}
-                  onChange={(e) => setTrxId(e.target.value.toUpperCase())}
-                  placeholder="e.g. BLA9238DK3"
-                  className="font-mono text-sm uppercase"
-                />
-                <span className="text-[11px] text-neutral-500 mt-0.5 block">{t("trxIdHelp")}</span>
+
+                <div>
+                  <div className="flex justify-between items-center">
+                    <label htmlFor="pay-trx-id">{t("trxId")}</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTrxId("TX-" + Date.now().toString(36).toUpperCase());
+                        if (!senderPhone) setSenderPhone(deal.buyer_phone);
+                        if (!payAmount) setPayAmount(String(deal.total_amount));
+                      }}
+                      className="text-[10px] text-accent underline hover:text-black dark:hover:text-white"
+                    >
+                      ⚡ {lang === "bn" ? "ডেমো TrxID" : "Demo TrxID"}
+                    </button>
+                  </div>
+                  <input
+                    id="pay-trx-id"
+                    required
+                    value={trxId}
+                    onChange={(e) => setTrxId(e.target.value.toUpperCase())}
+                    placeholder="e.g. BLA9238DK3"
+                    className="font-mono text-sm uppercase"
+                  />
+                  <span className="text-[11px] text-neutral-500 mt-0.5 block">{t("trxIdHelp")}</span>
+                </div>
               </div>
             </div>
 

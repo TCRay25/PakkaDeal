@@ -1,3 +1,20 @@
+/**
+ * Courier Adapter: Steadfast Courier
+ * 
+ * Data Source: Official Steadfast Merchant API
+ * Official Endpoint: https://api.steadfast.com.bd/v1/status_by_trackingcode/{trackingId}
+ * Required Environment Credentials:
+ *   - STEADFAST_API_KEY
+ *   - STEADFAST_SECRET_KEY
+ * Direct Public Tracking Link: https://steadfast.com.bd/t/{trackingId}
+ * 
+ * Limitations & Fallback Behavior:
+ *   - Steadfast requires an active merchant API key and secret key.
+ *   - If credentials are not configured in production, or if the API endpoint times out / fails,
+ *     the status gracefully falls back to "unverified" with the official direct tracking URL.
+ *   - Timeouts are strictly enforced at 5 seconds via AbortController.
+ */
+
 import { BaseCourier } from "./base.courier.js";
 
 export class SteadfastCourier extends BaseCourier {
@@ -39,11 +56,12 @@ export class SteadfastCourier extends BaseCourier {
     if (!apiKey || !secretKey) {
       if (isProd) {
         return {
+          isUnverified: true,
           needsCredentials: true,
           error: "Steadfast API credentials not configured in production (.env: STEADFAST_API_KEY, STEADFAST_SECRET_KEY)",
+          manualTrackingUrl: `https://steadfast.com.bd/t/${encodeURIComponent(trackingId)}`,
         };
       }
-      // Development Mock Response - strictly labeled
       return this.mockResponse(trackingId);
     }
 
@@ -56,6 +74,7 @@ export class SteadfastCourier extends BaseCourier {
           "Api-Key": apiKey,
           "Secret-Key": secretKey,
           "Content-Type": "application/json",
+          "User-Agent": "PakkaDeal/1.0 (+https://pakkadeal.com; Escrow Engine)",
         },
         signal: controller.signal,
       });
@@ -65,25 +84,40 @@ export class SteadfastCourier extends BaseCourier {
       return { isMock: false, data };
     } catch (err) {
       clearTimeout(timeout);
-      throw new Error(`Steadfast tracking request failed: ${err.message}`);
+      return {
+        isUnverified: true,
+        error: `Steadfast tracking request failed: ${err.message}`,
+        manualTrackingUrl: `https://steadfast.com.bd/t/${encodeURIComponent(trackingId)}`,
+      };
     }
   }
 
   normalize(rawObj, trackingId) {
     const now = new Date().toISOString();
-    if (rawObj?.needsCredentials) {
+    const manualUrl = `https://steadfast.com.bd/t/${encodeURIComponent(trackingId)}`;
+
+    if (rawObj?.needsCredentials || rawObj?.isUnverified) {
       return {
         trackingId,
         courier: this.name,
         courierCode: this.code,
-        standardizedStatus: "unknown",
-        originalStatus: "Awaiting Live Credentials",
-        currentLocation: "Credentials Required",
+        standardizedStatus: "unverified",
+        originalStatus: "Unverified (Requires Credentials or Manual Check)",
+        currentLocation: "External Verification Required",
         estimatedDeliveryAt: null,
         lastUpdated: now,
-        events: [],
+        manualTrackingUrl: manualUrl,
+        events: [
+          {
+            standardizedStatus: "unverified",
+            originalStatus: "Tracking Not Auto-Verified",
+            location: "External Courier Portal",
+            note: "Please verify on Steadfast website. Seller proof required for safety.",
+            occurredAt: now,
+          },
+        ],
         isMock: false,
-        needsCredentials: true,
+        needsCredentials: !!rawObj?.needsCredentials,
         error: rawObj.error,
       };
     }
@@ -103,6 +137,7 @@ export class SteadfastCourier extends BaseCourier {
       currentLocation: location,
       estimatedDeliveryAt: raw?.estimated_delivery_at || null,
       lastUpdated: raw?.last_updated || now,
+      manualTrackingUrl: manualUrl,
       events: [
         {
           standardizedStatus,

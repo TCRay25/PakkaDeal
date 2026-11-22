@@ -4,6 +4,36 @@ import { log, notify, notifySeller } from "./events.js";
 import { applyCourier, completeReturn } from "./settle.js";
 
 /**
+ * In-memory tracking cache with 10-minute TTL to prevent hammering external courier endpoints
+ */
+const trackingCache = new Map();
+const CACHE_TTL_MS = 10 * 60 * 1000;
+
+export function getCachedTracking(courierCode, trackingId) {
+  const key = `${courierCode}:${String(trackingId || "").trim()}`;
+  const item = trackingCache.get(key);
+  if (item && Date.now() < item.expiresAt) {
+    return item.data;
+  }
+  if (item) {
+    trackingCache.delete(key);
+  }
+  return null;
+}
+
+export function setCachedTracking(courierCode, trackingId, data) {
+  const key = `${courierCode}:${String(trackingId || "").trim()}`;
+  trackingCache.set(key, {
+    data,
+    expiresAt: Date.now() + CACHE_TTL_MS,
+  });
+}
+
+export function clearTrackingCache() {
+  trackingCache.clear();
+}
+
+/**
  * Detect courier from tracking ID using patterns and heuristics
  * @param {string} trackingId
  */
@@ -62,18 +92,30 @@ export async function updateDealTracking(deal, source = "api", externalPayload =
   const courier = getCourier(courierName);
   let rawData = externalPayload;
 
+  // Use memory cache for repeated lookups within 10 minutes
+  if (!rawData && source === "api") {
+    rawData = getCachedTracking(courier.code, trackingId);
+  }
+
   if (!rawData && courier.hasApi) {
     try {
       rawData = await courier.track(trackingId);
+      setCachedTracking(courier.code, trackingId, rawData);
       // Reset poll failures on success
       await q("update deals set poll_failure_count = 0, last_polled_at = CURRENT_TIMESTAMP where id = $1", [deal.id]);
     } catch (err) {
       console.warn(`[TRACKING SERVICE] Poll failed for deal #${deal.code} (${courierName} ${trackingId}):`, err.message);
       await q("update deals set poll_failure_count = poll_failure_count + 1, last_polled_at = CURRENT_TIMESTAMP where id = $1", [deal.id]);
-      return null;
+      rawData = {
+        isUnverified: true,
+        error: err.message,
+        manualTrackingUrl: courier.manualTrackingUrl || "",
+      };
+      setCachedTracking(courier.code, trackingId, rawData);
     }
   } else if (!rawData) {
     rawData = await courier.track(trackingId);
+    setCachedTracking(courier.code, trackingId, rawData);
   }
 
   const normalized = courier.normalize(rawData, trackingId);

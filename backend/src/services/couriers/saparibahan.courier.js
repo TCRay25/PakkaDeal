@@ -1,3 +1,16 @@
+/**
+ * Courier Adapter: SA Paribahan Parcel Service
+ * 
+ * Data Source: Physical Consignment / Money Receipt (MR)
+ * Direct Public Tracking Link: https://saparibahan.com/
+ * 
+ * Limitations & Fallback Behavior:
+ *   - SA Paribahan operates largely through branch-based counter registers and physical MR slips.
+ *   - No developer REST API is available for real-time order lifecycle tracking.
+ *   - Shipments via SA Paribahan default to "unverified" status with direct web link.
+ *   - Strictly relies on seller's uploaded consignment slip and manual buyer receipt confirmation.
+ */
+
 import { BaseCourier } from "./base.courier.js";
 
 export class SAParibahanCourier extends BaseCourier {
@@ -17,13 +30,14 @@ export class SAParibahanCourier extends BaseCourier {
   }
 
   mapStatus(rawStatus) {
-    return "in_transit";
+    return "unverified";
   }
 
   async track(trackingId) {
     return {
       isManual: true,
       hasApi: false,
+      isUnverified: true,
       trackingId,
       message: "SA Paribahan requires manual verification. Consignment slip required.",
       manualTrackingUrl: this.manualTrackingUrl,
@@ -36,17 +50,17 @@ export class SAParibahanCourier extends BaseCourier {
       trackingId,
       courier: this.name,
       courierCode: this.code,
-      standardizedStatus: "in_transit",
-      originalStatus: "Manual Tracking (SA Paribahan)",
+      standardizedStatus: "unverified",
+      originalStatus: "Manual Tracking (SA Paribahan Offline)",
       currentLocation: "Manual Verification Required",
       estimatedDeliveryAt: null,
       lastUpdated: now,
       events: [
         {
-          standardizedStatus: "in_transit",
-          originalStatus: "Manual Dispatch Recorded",
-          location: "SA Paribahan Parcel Branch",
-          note: "Requires buyer receipt confirmation. 24h timer does not auto-start.",
+          standardizedStatus: "unverified",
+          originalStatus: "Manual Booking Slip Uploaded",
+          location: "SA Paribahan Branch",
+          note: "Offline courier tracking is unverified. Auto-release paused; requires buyer receipt confirmation.",
           occurredAt: now,
         },
       ],

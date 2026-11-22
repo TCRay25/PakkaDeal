@@ -2,8 +2,15 @@ import { Router } from "express";
 import { q, one, isSqliteDb } from "../db.js";
 import { adminOnly, auth, fail, isAdmin } from "../http.js";
 import { config } from "../config.js";
-import { adminForceRelease, adminForceRefund, adminSplitResolution, getPublicSettings } from "../services/settle.js";
-import { log } from "../services/events.js";
+import {
+  adminForceRelease,
+  adminForceRefund,
+  adminSplitResolution,
+  getPublicSettings,
+  applyPayment,
+  addLedger,
+} from "../services/settle.js";
+import { log, notify, notifySeller } from "../services/events.js";
 import { emitGlobal } from "../services/socket.js";
 
 const router = Router();
@@ -42,6 +49,20 @@ router.get("/overview", async (_req, res) => {
 
     const openDisputes = await one("select count(*) as n from disputes where status='open'");
     const totalUsers = await one("select count(*) as n from users");
+    const pendingPaymentsCount = await one(`
+      select count(*) as n from deals
+      where (payment_status = 'pending' or (status = 'payment_pending' and payment_trx_id != ''))
+        and payment_status != 'confirmed'
+    `);
+    const pendingPayoutsCount = await one(`
+      select count(*) as n from deals
+      where status = 'released' and coalesce(payout_status, 'pending') != 'paid'
+    `);
+    const activeReturnsCount = await one(`
+      select count(*) as n from deals
+      where status in ('return_requested', 'return_shipped', 'return_received')
+         or (status = 'refunded' and (return_buyer_trx_id = '' or return_seller_trx_id = ''))
+    `);
 
     const dailySql = isSqliteDb()
       ? `select
@@ -67,6 +88,9 @@ router.get("/overview", async (_req, res) => {
       ...sums,
       open_disputes: openDisputes?.n || 0,
       total_users: totalUsers?.n || 0,
+      pending_payments: pendingPaymentsCount?.n || 0,
+      pending_payouts: pendingPayoutsCount?.n || 0,
+      active_returns: activeReturnsCount?.n || 0,
       daily: daily || [],
     });
   } catch (err) {
@@ -307,6 +331,506 @@ router.get("/shipments", async (req, res) => {
     },
     shipments: rows || [],
   });
+});
+
+/**
+ * ============================================================================
+ * PENDING PAYMENTS (Buyer deposits awaiting admin confirmation)
+ * ============================================================================
+ */
+router.get("/payments/pending", async (req, res) => {
+  const search = (req.query.trx_id || req.query.q || "").trim();
+  let query = `
+    select d.id, d.code, d.product, d.price, d.delivery_charge, d.total_amount, d.deposit,
+           d.buyer_name, d.buyer_phone, d.payment_method, d.payment_sender, d.payment_trx_id,
+           d.payment_amount, d.payment_status, d.payment_submitted_at, d.payment_rejection_reason,
+           d.status, d.created_at,
+           u.name as seller_name, u.phone as seller_phone, u.page_name
+    from deals d
+    join users u on u.id = d.seller_id
+    where (d.payment_status = 'pending' or (d.status = 'payment_pending' and d.payment_trx_id != ''))
+      and d.payment_status != 'confirmed'
+  `;
+  const params = [];
+  if (search) {
+    params.push(`%${search}%`);
+    query += ` and (d.payment_trx_id like $${params.length} or d.code like $${params.length} or d.buyer_phone like $${params.length} or d.payment_sender like $${params.length} or d.buyer_name like $${params.length})`;
+  }
+  query += ` order by d.id desc limit 100`;
+
+  const rows = await q(query, params);
+  const formatted = rows.map((r) => {
+    const declaredAmount = Number(r.payment_amount) || Number(r.total_amount);
+    const expectedAmount = Number(r.total_amount);
+    return {
+      ...r,
+      declared_amount: declaredAmount,
+      expected_amount: expectedAmount,
+      amount_mismatch: declaredAmount !== expectedAmount,
+    };
+  });
+
+  res.json(formatted);
+});
+
+router.post("/payments/:id/confirm", async (req, res) => {
+  const deal = await one("select * from deals where id=$1", [req.params.id]);
+  if (!deal) fail(404, "Deal not found");
+  if (deal.payment_status === "confirmed" || deal.status === "held") {
+    fail(400, "Payment for this deal is already confirmed and held in escrow");
+  }
+
+  // Security: double check unique payment_trx_id
+  if (deal.payment_trx_id) {
+    const existing = await one(
+      "select id, code from deals where payment_trx_id=$1 and id != $2 and payment_status='confirmed'",
+      [deal.payment_trx_id, deal.id]
+    );
+    if (existing) {
+      fail(400, `This TrxID (${deal.payment_trx_id}) was already confirmed for deal #${existing.code}`);
+    }
+  }
+
+  const updated = await applyPayment(deal, {
+    paymentMethod: deal.payment_method || "bKash",
+    senderNumber: deal.payment_sender || deal.buyer_phone,
+    trxId: deal.payment_trx_id,
+  });
+
+  await q(
+    `update deals set payment_status='confirmed', updated_at=CURRENT_TIMESTAMP where id=$1`,
+    [deal.id]
+  );
+
+  await log(
+    deal.id,
+    "payment_confirmed",
+    `Payment confirmed by admin (${req.user.phone}). Funds locked in escrow. TrxID: ${deal.payment_trx_id}`,
+    {
+      fromStatus: deal.status,
+      toStatus: "held",
+      actor: "admin",
+    }
+  );
+
+  res.json({ ok: true, deal: updated });
+});
+
+router.post("/payments/:id/reject", async (req, res) => {
+  const deal = await one("select * from deals where id=$1", [req.params.id]);
+  if (!deal) fail(404, "Deal not found");
+  const reason = (req.body.reason || "").trim();
+  if (!reason) {
+    fail(400, "Please provide a rejection reason for the buyer");
+  }
+
+  await q(
+    `update deals set
+       payment_status='rejected',
+       payment_rejection_reason=$2,
+       status='payment_pending',
+       updated_at=CURRENT_TIMESTAMP
+     where id=$1`,
+    [deal.id, reason]
+  );
+
+  await log(
+    deal.id,
+    "payment_rejected",
+    `Payment rejected by admin (${req.user.phone}). Reason: ${reason}`,
+    {
+      fromStatus: deal.status,
+      toStatus: "payment_pending",
+      actor: "admin",
+    }
+  );
+
+  await notify(
+    deal.buyer_phone,
+    `PakkaDeal #${deal.code}: আপনার পেমেন্ট বাতিল করা হয়েছে (${deal.payment_trx_id || "TrxID"}). কারণ: ${reason}। অনুগ্রহ করে যাচাই করে পুনরায় পেমেন্ট তথ্য দিন।`,
+    "Payment Rejected",
+    deal.code
+  );
+
+  res.json({ ok: true, reason });
+});
+
+/**
+ * ============================================================================
+ * PENDING PAYOUTS (Delivered / Released deals waiting for seller bKash disbursement)
+ * ============================================================================
+ */
+router.get("/payouts/pending", async (req, res) => {
+  const search = (req.query.q || "").trim();
+  let query = `
+    select d.id, d.code, d.product, d.total_amount, d.fee_amount, d.fee_percent,
+           d.seller_payout, d.status, d.outcome, d.created_at, d.updated_at,
+           d.payout_status, d.payout_trx_id, d.payout_at,
+           u.id as seller_id, u.name as seller_name, u.phone as seller_phone, u.page_name,
+           u.bkash_number as seller_bkash_number, u.bkash_type as seller_bkash_type,
+           u.bkash_verified as seller_bkash_verified
+    from deals d
+    join users u on u.id = d.seller_id
+    where d.status = 'released'
+      and coalesce(d.payout_status, 'pending') != 'paid'
+  `;
+  const params = [];
+  if (search) {
+    params.push(`%${search}%`);
+    query += ` and (d.code like $${params.length} or d.product like $${params.length} or u.phone like $${params.length} or u.name like $${params.length} or u.bkash_number like $${params.length})`;
+  }
+  query += ` order by d.id desc limit 150`;
+
+  const rows = await q(query, params);
+  res.json(rows);
+});
+
+router.post("/payouts/:id/pay", async (req, res) => {
+  const deal = await one("select * from deals where id=$1", [req.params.id]);
+  if (!deal) fail(404, "Deal not found");
+  if (deal.status !== "released") {
+    fail(400, "Payout can only be disbursed for released deals");
+  }
+  if (deal.payout_status === "paid") {
+    fail(400, "This deal has already been marked as paid out");
+  }
+
+  const payoutTrxId = (req.body.payout_trx_id || "").trim();
+  if (!payoutTrxId) {
+    fail(400, "Please provide the bKash Payout Transaction ID (TrxID)");
+  }
+
+  // Security: check uniqueness of payout_trx_id
+  const duplicate = await one(
+    "select id, code from deals where payout_trx_id=$1 and id != $2",
+    [payoutTrxId, deal.id]
+  );
+  if (duplicate) {
+    fail(400, `This Payout TrxID (${payoutTrxId}) was already recorded for deal #${duplicate.code}`);
+  }
+
+  // Security: Enforce seller bKash verification
+  const seller = await one("select * from users where id=$1", [deal.seller_id]);
+  if (!seller || !seller.bkash_verified) {
+    fail(400, "Seller bKash account is not verified by admin. Please verify seller bKash first before disbursing payout.");
+  }
+
+  await q(
+    `update deals set
+       payout_status='paid',
+       payout_trx_id=$2,
+       payout_at=CURRENT_TIMESTAMP,
+       updated_at=CURRENT_TIMESTAMP
+     where id=$1`,
+    [deal.id, payoutTrxId]
+  );
+
+  await addLedger({
+    dealId: deal.id,
+    type: "payout_seller",
+    amount: deal.seller_payout,
+    partyPhone: seller.bkash_number || seller.phone,
+    notes: `bKash Payout disbursed by admin (${req.user.phone}) to ${seller.bkash_number} (${seller.bkash_type}). TrxID: ${payoutTrxId}`,
+  });
+
+  await log(
+    deal.id,
+    "payout_completed",
+    `Seller payout of ${deal.seller_payout} BDT successfully disbursed via bKash by admin (${req.user.phone}). TrxID: ${payoutTrxId}`,
+    {
+      fromStatus: deal.status,
+      toStatus: deal.status,
+      actor: "admin",
+    }
+  );
+
+  await notifySeller(
+    deal.seller_id,
+    `PakkaDeal #${deal.code}: আপনার অ্যাকাউন্টে ${deal.seller_payout.toLocaleString()} BDT পেআউট পাঠানো হয়েছে (${seller.bkash_number})। TrxID: ${payoutTrxId}`,
+    "bKash Payout Disbursed",
+    deal.code
+  );
+
+  res.json({ ok: true, payout_trx_id: payoutTrxId });
+});
+
+/**
+ * ============================================================================
+ * RETURNS MANAGEMENT (Compensation to seller & refunds to buyer)
+ * ============================================================================
+ */
+router.get("/returns", async (req, res) => {
+  const search = (req.query.q || "").trim();
+  let query = `
+    select d.id, d.code, d.product, d.price, d.delivery_charge, d.return_charge,
+           d.total_amount, d.fee_amount, d.status, d.outcome, d.created_at, d.updated_at,
+           d.return_courier_name, d.return_tracking_id, d.return_courier_status,
+           d.return_seller_trx_id, d.return_seller_paid_at,
+           d.return_buyer_trx_id, d.return_buyer_paid_at,
+           s.id as seller_id, s.name as seller_name, s.phone as seller_phone,
+           s.bkash_number as seller_bkash_number, s.bkash_type as seller_bkash_type,
+           s.bkash_verified as seller_bkash_verified,
+           b.id as buyer_id, b.name as buyer_name, b.phone as buyer_phone,
+           b.bkash_number as buyer_bkash_number, b.bkash_type as buyer_bkash_type
+    from deals d
+    join users s on s.id = d.seller_id
+    left join users b on (b.phone = d.buyer_phone or b.id = d.buyer_id)
+    where d.status in ('return_requested', 'return_shipped', 'return_received', 'refunded')
+       or d.outcome in ('return_received', 'refused_at_door', 'admin_forced_refund', 'admin_split_resolution', 'return_requested')
+  `;
+  const params = [];
+  if (search) {
+    params.push(`%${search}%`);
+    query += ` and (d.code like $${params.length} or d.product like $${params.length} or s.phone like $${params.length} or d.buyer_phone like $${params.length})`;
+  }
+  query += ` order by d.id desc limit 100`;
+
+  const rows = await q(query, params);
+  const formatted = rows.map((r) => {
+    const deliveryAndReturn = Number(r.delivery_charge || 0) + Number(r.return_charge || r.delivery_charge || 0);
+    const sellerAmount = deliveryAndReturn;
+    const buyerRefund = Math.max(0, Number(r.total_amount) - deliveryAndReturn - Number(r.fee_amount || 0));
+
+    return {
+      ...r,
+      seller_compensation_amount: sellerAmount,
+      buyer_refund_amount: buyerRefund,
+      seller_paid: Boolean(r.return_seller_trx_id),
+      buyer_paid: Boolean(r.return_buyer_trx_id),
+    };
+  });
+
+  res.json(formatted);
+});
+
+router.post("/returns/:id/pay-seller", async (req, res) => {
+  const deal = await one("select * from deals where id=$1", [req.params.id]);
+  if (!deal) fail(404, "Deal not found");
+  if (deal.return_seller_trx_id) {
+    fail(400, "Seller shipping compensation has already been paid for this deal");
+  }
+
+  const trxId = (req.body.trx_id || "").trim();
+  if (!trxId) {
+    fail(400, "Please provide the bKash TrxID for seller shipping compensation");
+  }
+
+  const duplicate = await one(
+    "select id, code from deals where return_seller_trx_id=$1 and id != $2",
+    [trxId, deal.id]
+  );
+  if (duplicate) {
+    fail(400, `This TrxID was already used for deal #${duplicate.code}`);
+  }
+
+  const deliveryAndReturn = Number(deal.delivery_charge || 0) + Number(deal.return_charge || deal.delivery_charge || 0);
+  const seller = await one("select * from users where id=$1", [deal.seller_id]);
+
+  await q(
+    `update deals set
+       return_seller_trx_id=$2,
+       return_seller_paid_at=CURRENT_TIMESTAMP,
+       updated_at=CURRENT_TIMESTAMP
+     where id=$1`,
+    [deal.id, trxId]
+  );
+
+  await addLedger({
+    dealId: deal.id,
+    type: "payout_seller",
+    amount: deliveryAndReturn,
+    partyPhone: seller?.bkash_number || seller?.phone || "",
+    notes: `Seller return/refusal shipping compensation paid via bKash. TrxID: ${trxId}`,
+  });
+
+  await log(
+    deal.id,
+    "return_seller_paid",
+    `Seller shipping compensation of ${deliveryAndReturn} BDT paid via bKash by admin (${req.user.phone}). TrxID: ${trxId}`,
+    {
+      fromStatus: deal.status,
+      toStatus: deal.status,
+      actor: "admin",
+    }
+  );
+
+  if (seller) {
+    await notifySeller(
+      seller.id,
+      `PakkaDeal #${deal.code}: রিটার্ন/ডেলিভারি ক্ষতিপূরণ বাবদ ${deliveryAndReturn} BDT বিকাশ করা হয়েছে (${seller.bkash_number || seller.phone})। TrxID: ${trxId}`,
+      "Shipping Compensation Paid",
+      deal.code
+    );
+  }
+
+  res.json({ ok: true, return_seller_trx_id: trxId });
+});
+
+router.post("/returns/:id/pay-buyer", async (req, res) => {
+  const deal = await one("select * from deals where id=$1", [req.params.id]);
+  if (!deal) fail(404, "Deal not found");
+  if (deal.return_buyer_trx_id) {
+    fail(400, "Buyer refund has already been paid for this deal");
+  }
+
+  const trxId = (req.body.trx_id || "").trim();
+  if (!trxId) {
+    fail(400, "Please provide the bKash TrxID for buyer refund");
+  }
+
+  const duplicate = await one(
+    "select id, code from deals where return_buyer_trx_id=$1 and id != $2",
+    [trxId, deal.id]
+  );
+  if (duplicate) {
+    fail(400, `This TrxID was already used for deal #${duplicate.code}`);
+  }
+
+  const deliveryAndReturn = Number(deal.delivery_charge || 0) + Number(deal.return_charge || deal.delivery_charge || 0);
+  const refundAmount = Math.max(0, Number(deal.total_amount) - deliveryAndReturn - Number(deal.fee_amount || 0));
+
+  await q(
+    `update deals set
+       return_buyer_trx_id=$2,
+       return_buyer_paid_at=CURRENT_TIMESTAMP,
+       updated_at=CURRENT_TIMESTAMP
+     where id=$1`,
+    [deal.id, trxId]
+  );
+
+  await addLedger({
+    dealId: deal.id,
+    type: "refund_buyer",
+    amount: refundAmount,
+    partyPhone: deal.payment_sender || deal.buyer_phone,
+    notes: `Buyer return refund paid via bKash. TrxID: ${trxId}`,
+  });
+
+  await log(
+    deal.id,
+    "return_buyer_refunded",
+    `Buyer refund of ${refundAmount} BDT paid via bKash by admin (${req.user.phone}). TrxID: ${trxId}`,
+    {
+      fromStatus: deal.status,
+      toStatus: deal.status,
+      actor: "admin",
+    }
+  );
+
+  await notify(
+    deal.buyer_phone,
+    `PakkaDeal #${deal.code}: আপনার রিটার্ন রিফান্ড বাবদ ${refundAmount} BDT বিকাশ করা হয়েছে। TrxID: ${trxId}`,
+    "Refund Paid via bKash",
+    deal.code
+  );
+
+  res.json({ ok: true, return_buyer_trx_id: trxId });
+});
+
+/**
+ * ============================================================================
+ * PAID OUT / HISTORY (All completed payouts, refunds, and compensations)
+ * ============================================================================
+ */
+router.get("/history", async (req, res) => {
+  const { type = "all", q: search } = req.query;
+
+  let query = `
+    select d.id, d.code, d.product, d.total_amount, d.fee_amount, d.seller_payout,
+           d.delivery_charge, d.return_charge, d.status, d.outcome, d.created_at, d.updated_at,
+           d.payout_status, d.payout_trx_id, d.payout_at,
+           d.return_seller_trx_id, d.return_seller_paid_at,
+           d.return_buyer_trx_id, d.return_buyer_paid_at,
+           s.name as seller_name, s.phone as seller_phone, s.bkash_number as seller_bkash_number,
+           b.name as buyer_name, b.phone as buyer_phone, b.bkash_number as buyer_bkash_number
+    from deals d
+    join users s on s.id = d.seller_id
+    left join users b on (b.phone = d.buyer_phone or b.id = d.buyer_id)
+    where (d.payout_status = 'paid' or d.return_seller_trx_id != '' or d.return_buyer_trx_id != '')
+  `;
+  const params = [];
+
+  if (search) {
+    params.push(`%${search.trim()}%`);
+    query += ` and (
+      d.code like $${params.length}
+      or d.product like $${params.length}
+      or d.payout_trx_id like $${params.length}
+      or d.return_seller_trx_id like $${params.length}
+      or d.return_buyer_trx_id like $${params.length}
+      or s.phone like $${params.length}
+      or d.buyer_phone like $${params.length}
+    )`;
+  }
+
+  query += ` order by coalesce(d.payout_at, d.return_buyer_paid_at, d.return_seller_paid_at, d.updated_at) desc limit 200`;
+
+  const rows = await q(query, params);
+  const history = [];
+
+  for (const r of rows) {
+    if (r.payout_status === "paid" && r.payout_trx_id) {
+      if (type === "all" || type === "seller_payout") {
+        history.push({
+          id: `payout-${r.id}`,
+          deal_id: r.id,
+          deal_code: r.code,
+          deal_product: r.product,
+          transaction_type: "seller_payout",
+          type_label: "Seller Payout (বিক্রেতার পাওনা)",
+          recipient_name: r.seller_name,
+          recipient_phone: r.seller_phone,
+          recipient_bkash: r.seller_bkash_number || r.seller_phone,
+          amount: Number(r.seller_payout),
+          trx_id: r.payout_trx_id,
+          date: r.payout_at || r.updated_at,
+        });
+      }
+    }
+
+    if (r.return_seller_trx_id) {
+      if (type === "all" || type === "return_compensation") {
+        const deliveryAndReturn = Number(r.delivery_charge || 0) + Number(r.return_charge || r.delivery_charge || 0);
+        history.push({
+          id: `ret-seller-${r.id}`,
+          deal_id: r.id,
+          deal_code: r.code,
+          deal_product: r.product,
+          transaction_type: "return_compensation",
+          type_label: "Shipping Compensation (শিপিং ক্ষতিপূরণ)",
+          recipient_name: r.seller_name,
+          recipient_phone: r.seller_phone,
+          recipient_bkash: r.seller_bkash_number || r.seller_phone,
+          amount: deliveryAndReturn,
+          trx_id: r.return_seller_trx_id,
+          date: r.return_seller_paid_at || r.updated_at,
+        });
+      }
+    }
+
+    if (r.return_buyer_trx_id) {
+      if (type === "all" || type === "buyer_refund") {
+        const deliveryAndReturn = Number(r.delivery_charge || 0) + Number(r.return_charge || r.delivery_charge || 0);
+        const buyerRefund = Math.max(0, Number(r.total_amount) - deliveryAndReturn - Number(r.fee_amount || 0));
+        history.push({
+          id: `ret-buyer-${r.id}`,
+          deal_id: r.id,
+          deal_code: r.code,
+          deal_product: r.product,
+          transaction_type: "buyer_refund",
+          type_label: "Buyer Refund (ক্রেতার রিফান্ড)",
+          recipient_name: r.buyer_name || "Buyer",
+          recipient_phone: r.buyer_phone,
+          recipient_bkash: r.buyer_bkash_number || r.buyer_phone,
+          amount: buyerRefund,
+          trx_id: r.return_buyer_trx_id,
+          date: r.return_buyer_paid_at || r.updated_at,
+        });
+      }
+    }
+  }
+
+  res.json(history);
 });
 
 router.get("/settings", async (_req, res) => {

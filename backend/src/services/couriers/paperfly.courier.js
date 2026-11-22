@@ -1,3 +1,20 @@
+/**
+ * Courier Adapter: Paperfly
+ * 
+ * Data Source: Official Paperfly Tracking API
+ * Official Endpoint: https://api.paperfly.com.bd/
+ * Required Environment Credentials:
+ *   - PAPERFLY_USERNAME
+ *   - PAPERFLY_PASSWORD
+ * Direct Public Tracking Link: https://paperfly.com.bd/tracking.php
+ * 
+ * Limitations & Fallback Behavior:
+ *   - Requires Paperfly Basic Auth merchant credentials.
+ *   - If credentials are not configured or request fails, falls back to
+ *     "unverified" status with direct Paperfly tracking URL.
+ *   - Strict 5-second timeout via AbortController.
+ */
+
 import { BaseCourier } from "./base.courier.js";
 
 export class PaperflyCourier extends BaseCourier {
@@ -36,8 +53,10 @@ export class PaperflyCourier extends BaseCourier {
     if (!username || !password) {
       if (isProd) {
         return {
+          isUnverified: true,
           needsCredentials: true,
           error: "Paperfly API credentials not configured in production (.env: PAPERFLY_USERNAME, PAPERFLY_PASSWORD)",
+          manualTrackingUrl: this.manualTrackingUrl,
         };
       }
       return this.mockResponse(trackingId);
@@ -48,11 +67,14 @@ export class PaperflyCourier extends BaseCourier {
 
     try {
       const authHeader = "Basic " + Buffer.from(`${username}:${password}`).toString("base64");
-      const res = await fetch(`https://api.paperfly.com.bd/Tracking/GetTrackingDetails/${encodeURIComponent(trackingId)}`, {
+      const res = await fetch("https://api.paperfly.com.bd/OrderTracking", {
+        method: "POST",
         headers: {
           Authorization: authHeader,
           "Content-Type": "application/json",
+          "User-Agent": "PakkaDeal/1.0 (+https://pakkadeal.com; Escrow Engine)",
         },
+        body: JSON.stringify({ ReferenceNumber: trackingId }),
         signal: controller.signal,
       });
       clearTimeout(timeout);
@@ -61,34 +83,48 @@ export class PaperflyCourier extends BaseCourier {
       return { isMock: false, data };
     } catch (err) {
       clearTimeout(timeout);
-      throw new Error(`Paperfly tracking request failed: ${err.message}`);
+      return {
+        isUnverified: true,
+        error: `Paperfly tracking request failed: ${err.message}`,
+        manualTrackingUrl: this.manualTrackingUrl,
+      };
     }
   }
 
   normalize(rawObj, trackingId) {
     const now = new Date().toISOString();
-    if (rawObj?.needsCredentials) {
+
+    if (rawObj?.needsCredentials || rawObj?.isUnverified) {
       return {
         trackingId,
         courier: this.name,
         courierCode: this.code,
-        standardizedStatus: "unknown",
-        originalStatus: "Awaiting Live Credentials",
-        currentLocation: "Credentials Required",
+        standardizedStatus: "unverified",
+        originalStatus: "Unverified (Requires Credentials or Manual Check)",
+        currentLocation: "External Verification Required",
         estimatedDeliveryAt: null,
         lastUpdated: now,
-        events: [],
+        manualTrackingUrl: this.manualTrackingUrl,
+        events: [
+          {
+            standardizedStatus: "unverified",
+            originalStatus: "Tracking Not Auto-Verified",
+            location: "External Courier Portal",
+            note: "Please verify on Paperfly website. Consignment slip required for safety.",
+            occurredAt: now,
+          },
+        ],
         isMock: false,
-        needsCredentials: true,
+        needsCredentials: !!rawObj?.needsCredentials,
         error: rawObj.error,
       };
     }
 
     const isMock = !!rawObj?.isMock;
     const raw = rawObj?.data || rawObj;
-    const originalStatus = raw?.PaperflyStatus || raw?.status || "In Transit";
+    const originalStatus = raw?.Status || raw?.status || "in_transit";
     const standardizedStatus = this.mapStatus(originalStatus);
-    const location = raw?.current_point || "Paperfly Hub";
+    const location = raw?.Point || raw?.hub || "Paperfly Dispatch Center";
 
     return {
       trackingId,
@@ -97,15 +133,16 @@ export class PaperflyCourier extends BaseCourier {
       standardizedStatus,
       originalStatus,
       currentLocation: location,
-      estimatedDeliveryAt: raw?.estimated_delivery || null,
-      lastUpdated: raw?.last_updated || now,
+      estimatedDeliveryAt: raw?.DeliveryDate || null,
+      lastUpdated: raw?.LastUpdate || now,
+      manualTrackingUrl: this.manualTrackingUrl,
       events: [
         {
           standardizedStatus,
           originalStatus,
           location,
           note: isMock ? "[MOCK] Paperfly live simulation" : "Paperfly API verified update",
-          occurredAt: raw?.last_updated || now,
+          occurredAt: raw?.LastUpdate || now,
         },
       ],
       isMock,
@@ -117,20 +154,19 @@ export class PaperflyCourier extends BaseCourier {
     const clean = String(trackingId).toUpperCase();
     const now = new Date().toISOString();
 
-    let status = "In Transit";
-    if (clean.includes("RET") || clean.includes("REFUS")) status = "Returned";
-    else if (clean.includes("DELIV") || clean.endsWith("99")) status = "Delivered";
-    else if (clean.includes("FAIL")) status = "Failed";
-    else if (clean.includes("PICK")) status = "Picked Up";
+    let status = "in-transit";
+    if (clean.includes("RET") || clean.includes("REFUS")) status = "returned";
+    else if (clean.includes("DELIV") || clean.endsWith("99")) status = "delivered";
+    else if (clean.includes("FAIL")) status = "failed";
+    else if (clean.includes("PICK")) status = "picked";
 
     return {
       isMock: true,
       data: {
-        provider: "MOCK Paperfly",
-        TrackingNumber: trackingId,
-        PaperflyStatus: status,
-        current_point: status === "Delivered" ? "Delivered at Destination" : "Central Sorting Hub",
-        last_updated: now,
+        ReferenceNumber: trackingId,
+        Status: status,
+        Point: status === "delivered" ? "Customer Doorstep" : "Uttara Point Hub",
+        LastUpdate: now,
       },
     };
   }

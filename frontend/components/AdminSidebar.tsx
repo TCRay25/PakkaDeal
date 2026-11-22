@@ -12,6 +12,10 @@ export default function AdminSidebar() {
 
   const links = [
     { href: "/admin", label: t("overview") },
+    { href: "/admin/payments", label: t("pendingPayments") },
+    { href: "/admin/payouts", label: t("pendingPayouts") },
+    { href: "/admin/returns", label: t("returnsManagement") },
+    { href: "/admin/history", label: t("paidOutHistory") },
     { href: "/admin/deals", label: t("allDeals") },
     { href: "/admin/disputes", label: t("disputesQueue") },
     { href: "/admin/users", label: t("userManagement") },

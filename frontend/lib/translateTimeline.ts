@@ -289,5 +289,6 @@ export function translateCourierStatus(status: string, lang: Lang): string {
   if (s === "order_created") return "অর্ডার বুকিং সম্পন্ন";
   if (s === "cancelled") return "বাতিল";
   if (s === "lost") return "হারিয়ে গেছে";
+  if (s === "unverified") return "যাচাইবিহীন (অফিসিয়াল পোর্টালে চেক করুন)";
   return status;
 }

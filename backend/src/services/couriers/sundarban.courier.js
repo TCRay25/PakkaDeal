@@ -1,3 +1,17 @@
+/**
+ * Courier Adapter: Sundarban Courier Services Pvt Ltd
+ * 
+ * Data Source: Physical Consignment Slips & Branch Records
+ * Direct Public Tracking Link: https://www.sundarbancourierltd.com/
+ * 
+ * Limitations & Fallback Behavior:
+ *   - Sundarban Courier does not provide an open public REST API for programmatic lookups.
+ *     Their customer web portal is protected by anti-bot measures and session captchas.
+ *   - In compliance with ethical/security guidelines, we DO NOT bypass captchas or scrape.
+ *   - All shipments via Sundarban Courier default to "unverified" status with manual audit flags.
+ *   - Funds release requires physical consignment slip upload by seller and confirmation of receipt by buyer.
+ */
+
 import { BaseCourier } from "./base.courier.js";
 
 export class SundarbanCourier extends BaseCourier {
@@ -17,15 +31,16 @@ export class SundarbanCourier extends BaseCourier {
   }
 
   mapStatus(rawStatus) {
-    return "in_transit";
+    return "unverified";
   }
 
   async track(trackingId) {
     return {
       isManual: true,
       hasApi: false,
+      isUnverified: true,
       trackingId,
-      message: "Sundarban Courier requires manual verification. Consignment slip required.",
+      message: "Sundarban Courier requires manual verification. Consignment slip and buyer confirmation required.",
       manualTrackingUrl: this.manualTrackingUrl,
     };
   }
@@ -36,17 +51,17 @@ export class SundarbanCourier extends BaseCourier {
       trackingId,
       courier: this.name,
       courierCode: this.code,
-      standardizedStatus: "in_transit",
-      originalStatus: "Manual Tracking (Sundarban)",
+      standardizedStatus: "unverified",
+      originalStatus: "Manual Tracking (Sundarban Offline)",
       currentLocation: "Manual Verification Required",
       estimatedDeliveryAt: null,
       lastUpdated: now,
       events: [
         {
-          standardizedStatus: "in_transit",
-          originalStatus: "Manual Dispatch Recorded",
+          standardizedStatus: "unverified",
+          originalStatus: "Manual Booking Slip Uploaded",
           location: "Sundarban Booking Branch",
-          note: "Requires buyer receipt confirmation. 24h timer does not auto-start.",
+          note: "Offline courier tracking is unverified. 24h/72h timer does not auto-start; buyer manual receipt confirmation required.",
           occurredAt: now,
         },
       ],

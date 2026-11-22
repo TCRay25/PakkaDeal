@@ -82,7 +82,8 @@ export async function applyPayment(deal, paymentOpts = "bKash") {
 
   await q(
     `update deals set
-       status='held', deposit=$2, ship_by=$3, payment_method=$4, payment_sender=$5, payment_trx_id=$6, updated_at=CURRENT_TIMESTAMP
+       status='held', deposit=$2, ship_by=$3, payment_method=$4, payment_sender=$5, payment_trx_id=$6,
+       payment_status='confirmed', payment_amount=coalesce(nullif(payment_amount, 0), $2), updated_at=CURRENT_TIMESTAMP
      where id=$1`,
     [deal.id, deal.total_amount, shipBy, paymentMethod, senderNumber, trxId]
   );
@@ -363,6 +364,7 @@ export async function releaseToSeller(deal, outcome = "buyer_confirmed", actor =
        status='released',
        outcome=$2,
        auto_release_paused=1,
+       payout_status='pending',
        unboxing_photo=coalesce($3, unboxing_photo),
        unboxing_photo_type=case when $3 is not null then $4 else unboxing_photo_type end,
        updated_at=CURRENT_TIMESTAMP

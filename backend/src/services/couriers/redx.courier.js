@@ -1,3 +1,19 @@
+/**
+ * Courier Adapter: RedX Logistics
+ * 
+ * Data Source: Official RedX Open API
+ * Official Endpoint: https://openapi.redx.com.bd/v1.0.0/parcels/tracking/{trackingId}
+ * Required Environment Credentials:
+ *   - REDX_API_TOKEN (Bearer Token)
+ * Direct Public Tracking Link: https://redx.com.bd/track-order/
+ * 
+ * Limitations & Fallback Behavior:
+ *   - RedX requires registered merchant API token.
+ *   - When API token is absent or if requests time out, status falls back
+ *     to "unverified" with direct website tracking link.
+ *   - Strict 5-second timeout via AbortController.
+ */
+
 import { BaseCourier } from "./base.courier.js";
 
 export class RedXCourier extends BaseCourier {
@@ -35,8 +51,10 @@ export class RedXCourier extends BaseCourier {
     if (!token) {
       if (isProd) {
         return {
+          isUnverified: true,
           needsCredentials: true,
           error: "RedX API token not configured in production (.env: REDX_API_TOKEN)",
+          manualTrackingUrl: this.manualTrackingUrl,
         };
       }
       return this.mockResponse(trackingId);
@@ -48,43 +66,58 @@ export class RedXCourier extends BaseCourier {
     try {
       const res = await fetch(`https://openapi.redx.com.bd/v1.0.0/parcels/tracking/${encodeURIComponent(trackingId)}`, {
         headers: {
-          "API-ACCESS-TOKEN": `Bearer ${token}`,
+          API_ACCESS_TOKEN: `Bearer ${token}`,
           "Content-Type": "application/json",
+          "User-Agent": "PakkaDeal/1.0 (+https://pakkadeal.com; Escrow Engine)",
         },
         signal: controller.signal,
       });
       clearTimeout(timeout);
       if (!res.ok) throw new Error(`RedX API returned HTTP ${res.status}`);
       const data = await res.json();
-      return { isMock: false, data };
+      return { isMock: false, data: data?.tracking || data };
     } catch (err) {
       clearTimeout(timeout);
-      throw new Error(`RedX tracking request failed: ${err.message}`);
+      return {
+        isUnverified: true,
+        error: `RedX tracking request failed: ${err.message}`,
+        manualTrackingUrl: this.manualTrackingUrl,
+      };
     }
   }
 
   normalize(rawObj, trackingId) {
     const now = new Date().toISOString();
-    if (rawObj?.needsCredentials) {
+
+    if (rawObj?.needsCredentials || rawObj?.isUnverified) {
       return {
         trackingId,
         courier: this.name,
         courierCode: this.code,
-        standardizedStatus: "unknown",
-        originalStatus: "Awaiting Live Credentials",
-        currentLocation: "Credentials Required",
+        standardizedStatus: "unverified",
+        originalStatus: "Unverified (Requires Credentials or Manual Check)",
+        currentLocation: "External Verification Required",
         estimatedDeliveryAt: null,
         lastUpdated: now,
-        events: [],
+        manualTrackingUrl: this.manualTrackingUrl,
+        events: [
+          {
+            standardizedStatus: "unverified",
+            originalStatus: "Tracking Not Auto-Verified",
+            location: "External Courier Portal",
+            note: "Please verify on RedX website. Consignment slip required for safety.",
+            occurredAt: now,
+          },
+        ],
         isMock: false,
-        needsCredentials: true,
+        needsCredentials: !!rawObj?.needsCredentials,
         error: rawObj.error,
       };
     }
 
     const isMock = !!rawObj?.isMock;
     const raw = rawObj?.data || rawObj;
-    const originalStatus = raw?.tracking_status || raw?.parcel_status || raw?.status || "in-transit";
+    const originalStatus = raw?.status || "in-transit";
     const standardizedStatus = this.mapStatus(originalStatus);
     const location = raw?.current_location || "RedX Regional Hub";
 
@@ -97,6 +130,7 @@ export class RedXCourier extends BaseCourier {
       currentLocation: location,
       estimatedDeliveryAt: raw?.estimated_delivery_date || null,
       lastUpdated: raw?.updated_at || now,
+      manualTrackingUrl: this.manualTrackingUrl,
       events: [
         {
           standardizedStatus,
@@ -119,15 +153,14 @@ export class RedXCourier extends BaseCourier {
     if (clean.includes("RET") || clean.includes("REFUS")) status = "returned";
     else if (clean.includes("DELIV") || clean.endsWith("99")) status = "delivered";
     else if (clean.includes("FAIL")) status = "failed";
-    else if (clean.includes("PICK")) status = "picked_up";
+    else if (clean.includes("PICK")) status = "pickup-completed";
 
     return {
       isMock: true,
       data: {
-        provider: "MOCK RedX",
         tracking_id: trackingId,
-        tracking_status: status,
-        current_location: status === "delivered" ? "Delivered at Address" : "RedX Gazipur Hub",
+        status,
+        current_location: status === "delivered" ? "Customer Destination" : "RedX Banani Hub",
         updated_at: now,
       },
     };

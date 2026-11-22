@@ -86,6 +86,17 @@ export type Deal = {
   payment_method?: string;
   payment_sender?: string;
   payment_trx_id?: string;
+  payment_amount?: number;
+  payment_status?: string;
+  payment_submitted_at?: string;
+  payment_rejection_reason?: string;
+  payout_status?: string;
+  payout_trx_id?: string;
+  payout_at?: string;
+  return_seller_trx_id?: string;
+  return_seller_paid_at?: string;
+  return_buyer_trx_id?: string;
+  return_buyer_paid_at?: string;
   is_manual_courier?: number;
   courier_phone?: string;
   has_consignment_slip?: boolean;
@@ -264,6 +275,9 @@ export type AdminOverview = {
   total_deals: number;
   open_disputes: number;
   total_users: number;
+  pending_payments?: number;
+  pending_payouts?: number;
+  active_returns?: number;
   daily: Array<{
     day: string;
     deals: number;

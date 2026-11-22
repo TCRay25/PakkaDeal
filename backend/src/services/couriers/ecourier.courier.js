@@ -1,3 +1,21 @@
+/**
+ * Courier Adapter: eCourier
+ * 
+ * Data Source: Official eCourier Backoffice API
+ * Official Endpoint: https://backoffice.ecourier.com.bd/api/track
+ * Required Environment Credentials:
+ *   - ECOURIER_API_KEY
+ *   - ECOURIER_SECRET_KEY (optional depending on plan)
+ *   - ECOURIER_USER_ID
+ * Direct Public Tracking Link: https://ecourier.com.bd/
+ * 
+ * Limitations & Fallback Behavior:
+ *   - Requires merchant API key.
+ *   - When credentials are not found or endpoint fails/times out,
+ *     falls back to "unverified" status with direct eCourier portal URL.
+ *   - Strict 5-second timeout via AbortController.
+ */
+
 import { BaseCourier } from "./base.courier.js";
 
 export class ECourierProvider extends BaseCourier {
@@ -35,8 +53,10 @@ export class ECourierProvider extends BaseCourier {
     if (!apiKey) {
       if (isProd) {
         return {
+          isUnverified: true,
           needsCredentials: true,
           error: "eCourier API key not configured in production (.env: ECOURIER_API_KEY)",
+          manualTrackingUrl: this.manualTrackingUrl,
         };
       }
       return this.mockResponse(trackingId);
@@ -50,9 +70,11 @@ export class ECourierProvider extends BaseCourier {
         method: "POST",
         headers: {
           "API-KEY": apiKey,
+          "USER-ID": process.env.ECOURIER_USER_ID || "",
           "Content-Type": "application/json",
+          "User-Agent": "PakkaDeal/1.0 (+https://pakkadeal.com; Escrow Engine)",
         },
-        body: JSON.stringify({ ecr: trackingId }),
+        body: JSON.stringify({ ecrm_id: trackingId }),
         signal: controller.signal,
       });
       clearTimeout(timeout);
@@ -61,34 +83,48 @@ export class ECourierProvider extends BaseCourier {
       return { isMock: false, data };
     } catch (err) {
       clearTimeout(timeout);
-      throw new Error(`eCourier tracking request failed: ${err.message}`);
+      return {
+        isUnverified: true,
+        error: `eCourier tracking request failed: ${err.message}`,
+        manualTrackingUrl: this.manualTrackingUrl,
+      };
     }
   }
 
   normalize(rawObj, trackingId) {
     const now = new Date().toISOString();
-    if (rawObj?.needsCredentials) {
+
+    if (rawObj?.needsCredentials || rawObj?.isUnverified) {
       return {
         trackingId,
         courier: this.name,
         courierCode: this.code,
-        standardizedStatus: "unknown",
-        originalStatus: "Awaiting Live Credentials",
-        currentLocation: "Credentials Required",
+        standardizedStatus: "unverified",
+        originalStatus: "Unverified (Requires Credentials or Manual Check)",
+        currentLocation: "External Verification Required",
         estimatedDeliveryAt: null,
         lastUpdated: now,
-        events: [],
+        manualTrackingUrl: this.manualTrackingUrl,
+        events: [
+          {
+            standardizedStatus: "unverified",
+            originalStatus: "Tracking Not Auto-Verified",
+            location: "External Courier Portal",
+            note: "Please verify on eCourier website. Consignment slip required for safety.",
+            occurredAt: now,
+          },
+        ],
         isMock: false,
-        needsCredentials: true,
+        needsCredentials: !!rawObj?.needsCredentials,
         error: rawObj.error,
       };
     }
 
     const isMock = !!rawObj?.isMock;
     const raw = rawObj?.data || rawObj;
-    const originalStatus = raw?.status || "In Transit";
+    const originalStatus = raw?.status || raw?.delivery_status || "in_transit";
     const standardizedStatus = this.mapStatus(originalStatus);
-    const location = raw?.hub || "eCourier Central Hub";
+    const location = raw?.hub || raw?.current_location || "eCourier Central Hub";
 
     return {
       trackingId,
@@ -97,15 +133,16 @@ export class ECourierProvider extends BaseCourier {
       standardizedStatus,
       originalStatus,
       currentLocation: location,
-      estimatedDeliveryAt: null,
-      lastUpdated: now,
+      estimatedDeliveryAt: raw?.estimated_delivery_at || null,
+      lastUpdated: raw?.updated_at || now,
+      manualTrackingUrl: this.manualTrackingUrl,
       events: [
         {
           standardizedStatus,
           originalStatus,
           location,
           note: isMock ? "[MOCK] eCourier live simulation" : "eCourier API verified update",
-          occurredAt: now,
+          occurredAt: raw?.updated_at || now,
         },
       ],
       isMock,
@@ -117,19 +154,18 @@ export class ECourierProvider extends BaseCourier {
     const clean = String(trackingId).toUpperCase();
     const now = new Date().toISOString();
 
-    let status = "In Transit";
-    if (clean.includes("RET") || clean.includes("REFUS")) status = "Returned";
-    else if (clean.includes("DELIV") || clean.endsWith("99")) status = "Delivered";
-    else if (clean.includes("FAIL")) status = "Failed Delivery";
-    else if (clean.includes("PICK")) status = "Picked Up";
+    let status = "in_transit";
+    if (clean.includes("RET") || clean.includes("REFUS")) status = "returned";
+    else if (clean.includes("DELIV") || clean.endsWith("99")) status = "delivered";
+    else if (clean.includes("FAIL")) status = "failed";
+    else if (clean.includes("PICK")) status = "picked_up";
 
     return {
       isMock: true,
       data: {
-        provider: "MOCK eCourier",
-        ecr: trackingId,
+        ecrm_id: trackingId,
         status,
-        hub: status === "Delivered" ? "Delivered to Customer" : "Dhaka Hub",
+        hub: status === "delivered" ? "Recipient Location" : "Dhanmondi Hub",
         updated_at: now,
       },
     };
