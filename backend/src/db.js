@@ -88,7 +88,12 @@ export async function initDb() {
       const testPool = new pg.Pool({
         connectionString: config.databaseUrl,
         ssl: local ? false : { rejectUnauthorized: false },
-        connectionTimeoutMillis: 1500,
+        connectionTimeoutMillis: 8000,
+        idleTimeoutMillis: 30000,
+        keepAlive: true,
+      });
+      testPool.on("error", (err) => {
+        console.warn("[PostgreSQL Pool Error]", err.message);
       });
       await testPool.query("SELECT 1");
       pgPool = testPool;

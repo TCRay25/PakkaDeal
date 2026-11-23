@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
+    "seed:mock": "node scripts/seed-mock-data.js",
     "test": "node --test-concurrency=1 --test"
   },
   "dependencies": {

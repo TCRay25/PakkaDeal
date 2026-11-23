@@ -38,7 +38,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     // Initialize Socket.IO client instance
     const s: Socket = io(API, {
       auth: { token: token || "" },
-      transports: ["websocket", "polling"],
+      transports: ["polling", "websocket"],
       reconnection: true,
       reconnectionAttempts: 15,
       reconnectionDelay: 1000,
