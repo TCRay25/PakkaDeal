@@ -3,10 +3,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Logo from "./Logo";
 import { useI18n } from "@/lib/i18n";
+import { useSettings } from "@/lib/settings";
 
 export default function Footer() {
   const pathname = usePathname();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
+  const { formatFeePercent } = useSettings();
 
   // Only render footer on the landing page ("/") and nowhere else
   if (pathname !== "/" && pathname !== "") {
@@ -35,7 +37,12 @@ export default function Footer() {
             <ul className="space-y-2 text-sm text-neutral-600 dark:text-neutral-400">
               <li><Link href="/" className="hover:text-accent">{t("home")}</Link></li>
               <li><Link href="/how-it-works" className="hover:text-accent">{t("howTitle")}</Link></li>
-              <li><Link href="/fees" className="hover:text-accent">{t("feesTitle")}</Link></li>
+              <li>
+                <Link href="/fees" className="hover:text-accent flex items-center gap-1.5">
+                  <span>{lang === "bn" ? "সার্ভিস ফি" : "Fees"}</span>
+                  <span className="font-mono text-[11px] font-bold text-accent">({formatFeePercent(lang)})</span>
+                </Link>
+              </li>
               <li><Link href="/faq" className="hover:text-accent">{t("faqTitle")}</Link></li>
             </ul>
           </div>
@@ -55,7 +62,7 @@ export default function Footer() {
         <div className="mt-8 pt-8 border-t border-neutral-200 dark:border-neutral-800 flex flex-wrap items-center justify-between text-xs text-neutral-500 gap-4">
           <p>{t("footerCopyright")}</p>
           <div className="flex gap-4">
-            <span>{t("footerEscrowFee")}</span>
+            <span>{formatFeePercent(lang)} {lang === "bn" ? "এসক্রো ফি" : "Escrow Fee"}</span>
             <span>{t("footerCouriers")}</span>
             <span>{t("footerSandbox")}</span>
           </div>

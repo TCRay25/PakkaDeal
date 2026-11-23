@@ -10,7 +10,7 @@ import { useSettings } from "@/lib/settings";
 export default function CreateDealPage() {
   const { t, lang } = useI18n();
   const { user } = useAuth();
-  const { calculateFee } = useSettings();
+  const { calculateFee, formatFeePercent } = useSettings();
   const router = useRouter();
 
   const [dealType, setDealType] = useState<"product" | "rental" | "service">("product");
@@ -323,6 +323,16 @@ export default function CreateDealPage() {
               <div className="flex justify-between border-t border-neutral-300 dark:border-neutral-700 pt-2 font-bold text-base text-emerald-600 dark:text-emerald-400">
                 <span>{lang === "bn" ? "আপনার মোট পাওনা:" : t("sellerPayout") + ":"}</span>
                 <span className="font-mono">{sellerPayout.toLocaleString()} BDT</span>
+              </div>
+              <div className="pt-2 border-t border-neutral-200 dark:border-neutral-800 text-xs space-y-1.5 text-neutral-600 dark:text-neutral-400">
+                <div className="flex justify-between items-center text-accent">
+                  <span>{lang === "bn" ? `ক্রেতার এসক্রো চার্জ (${formatFeePercent(lang)}):` : `Buyer Escrow Fee (${formatFeePercent(lang)}):`}</span>
+                  <span className="font-mono font-bold">+{calculateFee(sellerPayout).toLocaleString()} BDT</span>
+                </div>
+                <div className="flex justify-between items-center font-semibold text-neutral-800 dark:text-neutral-200">
+                  <span>{lang === "bn" ? "ক্রেতার মোট ডিপোজিট:" : "Total Buyer Deposit:"}</span>
+                  <span className="font-mono">{(sellerPayout + calculateFee(sellerPayout)).toLocaleString()} BDT</span>
+                </div>
               </div>
             </div>
 

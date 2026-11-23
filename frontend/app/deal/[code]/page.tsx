@@ -11,6 +11,7 @@ import Timeline from "@/components/Timeline";
 import MoneyBreakdown from "@/components/MoneyBreakdown";
 import TrackingTimeline from "@/components/TrackingTimeline";
 import { translateDealType, translateLedgerType, translateLedgerNote } from "@/lib/translateTimeline";
+import { toBengaliDigits } from "@/lib/settings";
 
 function useCountdown(targetIsoDate?: string | null, isPaused: boolean = false) {
   const [timeLeft, setTimeLeft] = useState<{ hours: number; minutes: number; seconds: number; expired: boolean } | null>(null);
@@ -683,7 +684,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                         {deal.fee_amount > 0 && (
                           <div className="text-xs text-accent font-mono">
                             {lang === "bn"
-                              ? `(পণ্যের মূল্য: ${deal.price.toLocaleString()} + ডেলিভারি: ${(deal.delivery_charge || 0).toLocaleString()} + ${deal.fee_percent || 1}% এসক্রো চার্জ: ${deal.fee_amount.toLocaleString()} টাকা)`
+                              ? `(পণ্যের মূল্য: ${deal.price.toLocaleString()} + ডেলিভারি: ${(deal.delivery_charge || 0).toLocaleString()} + ${toBengaliDigits(deal.fee_percent || 1)}% এসক্রো চার্জ: ${deal.fee_amount.toLocaleString()} টাকা)`
                               : `(Price: ${deal.price.toLocaleString()} + Delivery: ${(deal.delivery_charge || 0).toLocaleString()} + ${deal.fee_percent || 1}% Escrow Fee: ${deal.fee_amount.toLocaleString()} BDT)`}
                           </div>
                         )}

@@ -36,8 +36,8 @@ export async function getSetting(key, fallback) {
 export async function getPublicSettings() {
   const rows = await q("select key, value from settings");
   const map = {
-    platform_fee_percent: String(config.feePercent || 2),
-    platform_fee_min: String(config.feeMin || 10),
+    platform_fee_percent: String(config.feePercent !== undefined ? config.feePercent : 1),
+    platform_fee_min: String(config.feeMin !== undefined ? config.feeMin : 10),
     confirm_window_hours: String(config.confirmWithinHours || 72),
     ship_within_hours: String(config.shipWithinHours || 48),
     return_deduct_shipping: "true",
@@ -55,9 +55,9 @@ export async function getPublicSettings() {
 }
 
 export async function calculateFee(amount) {
-  const feePercent = Number(await getSetting("platform_fee_percent", config.feePercent));
-  const feeMin = Number(await getSetting("platform_fee_min", config.feeMin));
-  const fee = Math.round((amount * feePercent) / 100);
+  const feePercent = Number(await getSetting("platform_fee_percent", config.feePercent ?? 1));
+  const feeMin = Number(await getSetting("platform_fee_min", config.feeMin ?? 10));
+  const fee = Math.round((Number(amount || 0) * feePercent) / 100);
   return Math.max(fee, feeMin);
 }
 

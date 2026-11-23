@@ -162,12 +162,12 @@ export default function AdminSettingsPage() {
                   step="0.1"
                   min="0"
                   max="20"
-                  value={settings["platform_fee_percent"] || "2"}
+                  value={settings["platform_fee_percent"] !== undefined && settings["platform_fee_percent"] !== "" ? settings["platform_fee_percent"] : "1"}
                   onChange={(e) => handleChange("platform_fee_percent", e.target.value)}
                   className="font-mono text-sm"
                 />
                 <span className="text-xs text-neutral-500 mt-1 block">
-                  {lang === "bn" ? "ডিফল্ট ২%। বিক্রেতার পেআউট থেকে কর্তন করা হয়।" : "Default 2%. Deducted from seller payout."}
+                  {lang === "bn" ? "ক্রেতার এসক্রো ডিপোজিটের সাথে যুক্ত সার্ভিস ফি শতাংশ (ডিফল্ট ১%)।" : "Escrow service fee percentage added at buyer checkout (default 1%)."}
                 </span>
               </div>
 

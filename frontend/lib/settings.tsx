@@ -93,15 +93,17 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     };
   }, [on]);
 
-  const feePercent = Number(settings.platform_fee_percent) || 2;
-  const feeMin = Number(settings.platform_fee_min) || 10;
+  const rawFee = Number(settings.platform_fee_percent);
+  const feePercent = !isNaN(rawFee) && settings.platform_fee_percent !== "" ? rawFee : 1;
+  const rawMin = Number(settings.platform_fee_min);
+  const feeMin = !isNaN(rawMin) && settings.platform_fee_min !== "" ? rawMin : 10;
   const confirmHours = Number(settings.confirm_window_hours) || 72;
   const shipHours = Number(settings.ship_within_hours) || 48;
 
   const calculateFee = useCallback(
     (amount: number) => {
       if (!amount || amount <= 0) return 0;
-      const calculated = Math.round((amount * feePercent) / 100);
+      const calculated = Math.round((Number(amount) * feePercent) / 100);
       return Math.max(calculated, feeMin);
     },
     [feePercent, feeMin]

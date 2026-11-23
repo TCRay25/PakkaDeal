@@ -9,10 +9,9 @@ import Footer from "@/components/Footer";
 
 export default function Home() {
   const { t, lang } = useI18n();
-  const { calculateFee } = useSettings();
+  const { calculateFee, formatFeePercent, formatFeeMin } = useSettings();
   const [calcAmount, setCalcAmount] = useState<number>(5000);
   const fee = calculateFee(calcAmount);
-  const sellerReceives = Math.max(0, calcAmount - fee);
 
   return (
     <div className="w-full">
@@ -170,10 +169,14 @@ export default function Home() {
             <div className="lg:col-span-6 space-y-4">
               <span className="text-xs font-semibold uppercase tracking-wider text-accent block">{t("calculator")}</span>
               <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100">
-                {t("feesTitle")}
+                {lang === "bn"
+                  ? `সহজ ও স্বচ্ছ ${formatFeePercent(lang)} সার্ভিস ফি`
+                  : `Transparent ${formatFeePercent("en")} Escrow Service Fee`}
               </h2>
               <p className="text-sm text-neutral-600 dark:text-neutral-400 leading-relaxed">
-                {t("feesText")}
+                {lang === "bn"
+                  ? `পাক্কাডিল ক্রেতার সম্পূর্ণ আর্থিক নিরাপত্তার জন্য অর্ডারের সময় মাত্র ${formatFeePercent(lang)} সার্ভিস ফি (সর্বনিম্ন ${formatFeeMin(lang)}) যুক্ত করে। বিক্রেতার মূল্য থেকে কোনো টাকা কাটা হয় না।`
+                  : `PakkaDeal adds a transparent ${formatFeePercent("en")} escrow protection fee (minimum ${formatFeeMin("en")}) at buyer checkout. Sellers receive 100% of their listed price without deductions upon successful completion.`}
               </p>
             </div>
 
@@ -194,15 +197,27 @@ export default function Home() {
 
                 <div className="grid grid-cols-2 gap-4 pt-2 border-t border-neutral-200 dark:border-neutral-800 text-sm">
                   <div>
-                    <span className="text-xs text-neutral-500 uppercase block">{t("platformFeeLabel")}</span>
+                    <span className="text-xs text-neutral-500 uppercase block">
+                      {lang === "bn" ? `এসক্রো সার্ভিস ফি (${formatFeePercent(lang)})` : `Escrow Fee (${formatFeePercent("en")})`}
+                    </span>
                     <span className="font-mono font-bold text-neutral-800 dark:text-neutral-200">
-                      {fee.toLocaleString()} BDT
+                      +{fee.toLocaleString()} BDT
                     </span>
                   </div>
                   <div>
-                    <span className="text-xs text-emerald-600 dark:text-emerald-400 uppercase block">{t("sellerReceivesLabel")}</span>
+                    <span className="text-xs text-emerald-600 dark:text-emerald-400 uppercase block">
+                      {lang === "bn" ? "বিক্রেতার নিট পাওনা (১০০%)" : "Seller Payout (100%)"}
+                    </span>
                     <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 text-lg">
-                      {sellerReceives.toLocaleString()} BDT
+                      {calcAmount.toLocaleString()} BDT
+                    </span>
+                  </div>
+                  <div className="col-span-2 pt-2 border-t border-dashed border-neutral-200 dark:border-neutral-800 flex justify-between items-center text-xs">
+                    <span className="font-semibold text-neutral-700 dark:text-neutral-300">
+                      {lang === "bn" ? "ক্রেতার মোট এসক্রো জমা:" : "Total Buyer Escrow Deposit:"}
+                    </span>
+                    <span className="font-mono font-extrabold text-accent text-sm">
+                      {(calcAmount + fee).toLocaleString()} BDT
                     </span>
                   </div>
                 </div>

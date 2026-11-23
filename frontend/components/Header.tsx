@@ -5,12 +5,14 @@ import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
+import { useSettings } from "@/lib/settings";
 import Logo from "./Logo";
 import NotificationBell from "./NotificationBell";
 
 export default function Header() {
   const { t, toggle, lang } = useI18n();
   const { user } = useAuth();
+  const { formatFeePercent } = useSettings();
   const { theme, setTheme } = useTheme();
   const pathname = usePathname();
   const [mounted, setMounted] = useState(false);
@@ -40,13 +42,16 @@ export default function Header() {
             </Link>
             <Link
               href="/fees"
-              className={`px-3 py-1.5 transition-colors ${
+              className={`px-3 py-1.5 transition-colors flex items-center gap-1.5 ${
                 isActive("/fees")
                   ? "text-accent font-semibold"
                   : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
               }`}
             >
-              {t("feesTitle")}
+              <span>{lang === "bn" ? "সার্ভিস ফি" : "Escrow Fee"}</span>
+              <span className="px-1.5 py-0.5 text-[11px] font-mono font-bold bg-accent/10 border border-accent/30 text-accent">
+                {formatFeePercent(lang)}
+              </span>
             </Link>
             <Link
               href="/faq"
@@ -119,8 +124,19 @@ export default function Header() {
           <Link href="/how-it-works" onClick={() => setMobileMenuOpen(false)} className="block py-1 text-sm">
             {t("howTitle")}
           </Link>
-          <Link href="/fees" onClick={() => setMobileMenuOpen(false)} className="block py-1 text-sm">
-            {t("feesTitle")}
+          <Link
+            href="/fees"
+            onClick={() => setMobileMenuOpen(false)}
+            className={`flex items-center justify-between py-1 text-sm ${
+              isActive("/fees")
+                ? "text-accent font-semibold"
+                : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
+            }`}
+          >
+            <span>{lang === "bn" ? "সার্ভিস ফি" : "Escrow Fee"}</span>
+            <span className="px-1.5 py-0.5 text-xs font-mono font-bold bg-accent/10 border border-accent/30 text-accent">
+              {formatFeePercent(lang)}
+            </span>
           </Link>
           <Link href="/faq" onClick={() => setMobileMenuOpen(false)} className="block py-1 text-sm">
             {t("faqTitle")}
