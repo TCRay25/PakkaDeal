@@ -24,6 +24,7 @@ export default function AdminDealsPage() {
   const [splitSellerAmount, setSplitSellerAmount] = useState(0);
   const [splitBuyerAmount, setSplitBuyerAmount] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [seedingMock, setSeedingMock] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   const loadDeals = () => {
@@ -101,15 +102,38 @@ export default function AdminDealsPage() {
     }
   };
 
+  const handleSeedMockDeals = async () => {
+    if (!confirm(lang === "bn" ? "অনলাইন ডাটাবেসে ৫০টি ভিন্ন ফেজের মক ডিল সিড করতে চান?" : "Seed 50 mock deals of different phases to database?")) return;
+    setSeedingMock(true);
+    try {
+      await post("/admin/seed-mock-deals");
+      loadDeals();
+      alert(lang === "bn" ? "৫০টি মক ডিল সফলভাবে সিড করা হয়েছে!" : "50 mock deals successfully seeded!");
+    } catch (e: any) {
+      alert(e.message || "Failed to seed mock deals");
+    } finally {
+      setSeedingMock(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <div className="border-b border-neutral-200 dark:border-neutral-800 pb-4">
-        <h1 className="text-2xl font-bold tracking-tight">{t("allDeals")}</h1>
-        <p className="text-sm text-neutral-500">
-          {lang === "bn"
-            ? "বাংলাদেশ জুড়ে সমস্ত প্ল্যাটফর্ম এসক্রো চুক্তির মাস্টার রেজিস্ট্রি।"
-            : "Master registry of all platform escrow contracts across Bangladesh."}
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-neutral-200 dark:border-neutral-800 pb-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">{t("allDeals")}</h1>
+          <p className="text-sm text-neutral-500">
+            {lang === "bn"
+              ? "বাংলাদেশ জুড়ে সমস্ত প্ল্যাটফর্ম এসক্রো চুক্তির মাস্টার রেজিস্ট্রি।"
+              : "Master registry of all platform escrow contracts across Bangladesh."}
+          </p>
+        </div>
+        <button
+          onClick={handleSeedMockDeals}
+          disabled={seedingMock}
+          className="px-3 py-1.5 text-xs font-bold border border-accent text-accent hover:bg-accent hover:text-white transition-colors"
+        >
+          {seedingMock ? (lang === "bn" ? "সিড হচ্ছে..." : "Seeding...") : (lang === "bn" ? "+ ৫০টি মক ডাটা সিড করুন" : "+ Seed 50 Mock Deals")}
+        </button>
       </div>
 
       {/* Quick Filter Chips */}

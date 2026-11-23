@@ -1036,4 +1036,12 @@ async function seedInitialData() {
 
     console.log("Seeding completed successfully.");
   }
+
+  // Ensure 50 realistic mock deals exist in any environment (Render PostgreSQL or local SQLite)
+  try {
+    const { seed50MockDeals } = await import("./services/mockDeals.js");
+    await seed50MockDeals({ force: false });
+  } catch (mErr) {
+    console.warn("[MOCK SEED WARNING]", mErr.message);
+  }
 }

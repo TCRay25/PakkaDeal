@@ -856,4 +856,14 @@ router.patch("/settings", async (req, res) => {
   res.json({ ok: true, settings: rows });
 });
 
+router.post("/seed-mock-deals", async (_req, res) => {
+  try {
+    const { seed50MockDeals } = await import("../services/mockDeals.js");
+    const result = await seed50MockDeals({ force: true });
+    res.json({ ok: true, message: "50 mock deals seeded successfully", ...result });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 export default router;
