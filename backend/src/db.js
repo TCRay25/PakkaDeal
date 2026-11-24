@@ -303,6 +303,7 @@ export async function initDb() {
         seller_response_deadline text,
         claim_reason text not null default '',
         decision_record text not null default '',
+        is_demo int not null default 0,
         created_at text not null default (datetime('now')),
         updated_at text not null default (datetime('now'))
       );
@@ -589,6 +590,7 @@ export async function initDb() {
         seller_response_deadline timestamptz,
         claim_reason text not null default '',
         decision_record text not null default '',
+        is_demo int not null default 0,
         is_manual_courier int not null default 0,
         courier_phone text not null default '',
         consignment_slip bytea,
@@ -824,6 +826,7 @@ async function runMigrations() {
         ["seller_response_deadline", "text"],
         ["claim_reason", "text not null default ''"],
         ["decision_record", "text not null default ''"],
+        ["is_demo", "int not null default 0"],
       ];
       for (const [col, colType] of neededDealCols) {
         if (!dealCols.includes(col)) {
@@ -1071,6 +1074,7 @@ async function runMigrations() {
         ["seller_response_deadline", "timestamptz"],
         ["claim_reason", "text not null default ''"],
         ["decision_record", "text not null default ''"],
+        ["is_demo", "int not null default 0"],
       ];
       for (const [col, colType] of neededDealCols) {
         await pgPool.query(`alter table deals add column if not exists ${col} ${colType}`);
@@ -1369,6 +1373,10 @@ async function seedInitialData() {
   } catch (mErr) {
     console.warn("[MOCK SEED WARNING]", mErr.message);
   }
+
+  try {
+    await q(`update deals set is_demo = 1 where code like 'PK-MOCK-%' or code like 'PK-PROD-%' or code like 'PK-RENT-%' or code like 'PK-SERV-%'`);
+  } catch (_e) {}
 }
 
 async function seedDemoDeals(s1, s2, s3) {

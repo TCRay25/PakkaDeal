@@ -99,9 +99,57 @@ router.post("/send-otp", sendOtpIpLimiter, sendOtpPhoneLimiter, async (req, res)
   });
 });
 
+// Direct 1-click Demo & Admin login (no authorization/OTP challenge required)
+router.post("/demo-login", async (req, res) => {
+  const rawPhone = (req.body.phone || "").trim();
+  const cleanPhone = rawPhone.replace(/\D/g, "").slice(-11);
+
+  if (!isDemoPhone(cleanPhone)) {
+    return fail(403, "Only demo accounts and admin can use 1-click demo login");
+  }
+
+  // Delete any stale OTPs
+  await q("delete from otps where phone = $1", [cleanPhone]);
+
+  let user = await one("select * from users where phone=$1", [cleanPhone]);
+  if (!user) {
+    const isUserAdmin = config.adminPhones.includes(cleanPhone);
+    const role = isUserAdmin ? "admin" : (cleanPhone === "01711223344" ? "seller" : "buyer");
+    const name = isUserAdmin
+      ? "PakkaDeal Admin"
+      : (cleanPhone === "01711223344" ? "Rahim Chowdhury" : "Nusrat Jahan");
+    const pageName = role === "seller" ? "Gadget Corner BD" : "";
+    user = await one(
+      `insert into users(public_id, phone, name, email, role, page_name, seller_trust, buyer_trust, bkash_number, bkash_type, bkash_verified, token_version)
+       values($1, $2, $3, $4, $5, $6, 95, 95, $2, 'Merchant', 1, 1) returning *`,
+      [generatePublicId(), cleanPhone, name, `${cleanPhone}@demo.pakkadeal.com`, role, pageName]
+    );
+  } else {
+    // Ensure demo account has verified bKash details so profile is immediately complete
+    if (!user.bkash_number || !user.bkash_verified) {
+      user = await one(
+        "update users set bkash_number=$2, bkash_type='Merchant', bkash_verified=1 where id=$1 returning *",
+        [user.id, user.phone]
+      );
+    }
+  }
+
+  if (user.is_suspended) {
+    return fail(403, "This account is suspended. Please contact PakkaDeal support.");
+  }
+
+  const isUserAdmin = isAdmin(user);
+  res.json({
+    token: makeToken(user),
+    user,
+    is_admin: isUserAdmin,
+    profile_complete: true,
+  });
+});
+
 router.post("/verify", verifyIpLimiter, async (req, res) => {
   const { phone, otp, name = "", email = "", page_name = "", role = "user" } = req.body;
-  const cleanPhone = (phone || "").trim();
+  const cleanPhone = (phone || "").trim().replace(/\D/g, "").slice(-11);
   const cleanOtp = (otp || "").trim();
   const cleanEmail = (email || "").trim().toLowerCase();
   const cleanName = (name || "").trim();
@@ -111,6 +159,44 @@ router.post("/verify", verifyIpLimiter, async (req, res) => {
   if (!PHONE.test(cleanPhone)) {
     return fail(400, "Enter a valid 11-digit Bangladesh mobile number");
   }
+
+  // Demo accounts and admin bypass OTP verification completely
+  if (isDemoPhone(cleanPhone)) {
+    await q("delete from otps where phone = $1", [cleanPhone]);
+    let user = await one("select * from users where phone=$1", [cleanPhone]);
+    if (!user) {
+      const isUserAdmin = config.adminPhones.includes(cleanPhone);
+      const userRole = isUserAdmin ? "admin" : (cleanPhone === "01711223344" ? "seller" : "buyer");
+      const defaultName = isUserAdmin
+        ? "PakkaDeal Admin"
+        : (cleanPhone === "01711223344" ? "Rahim Chowdhury" : "Nusrat Jahan");
+      user = await one(
+        `insert into users(public_id, phone, name, email, role, page_name, seller_trust, buyer_trust, bkash_number, bkash_type, bkash_verified, token_version)
+         values($1, $2, $3, $4, $5, $6, 95, 95, $2, 'Merchant', 1, 1) returning *`,
+        [generatePublicId(), cleanPhone, cleanName || defaultName, cleanEmail || `${cleanPhone}@demo.pakkadeal.com`, userRole, cleanShop || (userRole === "seller" ? "Gadget Corner BD" : "")]
+      );
+    } else {
+      if (!user.bkash_number || !user.bkash_verified) {
+        user = await one(
+          "update users set bkash_number=$2, bkash_type='Merchant', bkash_verified=1 where id=$1 returning *",
+          [user.id, user.phone]
+        );
+      }
+    }
+
+    if (user.is_suspended) {
+      return fail(403, "This account is suspended. Please contact PakkaDeal support.");
+    }
+
+    const isUserAdmin = isAdmin(user);
+    return res.json({
+      token: makeToken(user),
+      user,
+      is_admin: isUserAdmin,
+      profile_complete: true,
+    });
+  }
+
   if (!cleanOtp) {
     return fail(400, "ভেরিফিকেশন কোড লিখুন (Please enter verification code)");
   }

@@ -82,6 +82,8 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ detail: err.message || "Something went wrong" });
 });
 
+export { app, server };
+
 await initDb();
 startCronJobs();
 

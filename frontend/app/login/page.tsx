@@ -252,19 +252,27 @@ export default function LoginPage() {
     }
   }
 
-  // Direct demo login bypass for convenience/testing
+  // Direct demo login bypass for convenience/testing: 1-click login with 0 authorization requirements
   async function directDemoLogin(demoPhone: string, demoName: string) {
     setLoading(true);
     setErr("");
     try {
-      const r = await post<{ token: string; user: any; is_admin: boolean }>("/auth/verify", {
+      const r = await post<{ token: string; user: any; is_admin: boolean; profile_complete?: boolean }>("/auth/demo-login", {
         phone: demoPhone,
-        otp: "123456",
         name: demoName,
       });
       await finishLogin(r);
     } catch (x: any) {
-      setErr(x.message || "Demo login failed");
+      try {
+        const r2 = await post<{ token: string; user: any; is_admin: boolean }>("/auth/verify", {
+          phone: demoPhone,
+          otp: "123456",
+          name: demoName,
+        });
+        await finishLogin(r2);
+      } catch (e2: any) {
+        setErr(x.message || "Demo login failed");
+      }
     } finally {
       setLoading(false);
     }
@@ -279,40 +287,51 @@ export default function LoginPage() {
         </p>
       </div>
 
-      {/* Quick Demo Logins for Fast Verification */}
-      <div className="box p-4 bg-neutral-50 dark:bg-neutral-900 space-y-2 border border-neutral-300 dark:border-neutral-700">
+      {/* Quick Demo Logins for Fast Verification - Instant 1-Click Login */}
+      <div className="box p-4 bg-emerald-50/50 dark:bg-emerald-950/20 space-y-3 border border-emerald-300 dark:border-emerald-800 rounded-xl">
         <div className="flex items-center justify-between">
-          <span className="text-xs uppercase font-bold text-neutral-500 tracking-wider">
-            {t("demoAccounts")}
-          </span>
-          <span className="text-[10px] text-neutral-400">
-            {lang === "bn" ? "টেস্টিংয়ের জন্য দ্রুত লগইন" : "Quick Access"}
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span className="text-xs uppercase font-bold text-emerald-800 dark:text-emerald-300 tracking-wider">
+              {lang === "bn" ? "ডেমো অ্যাকাউন্টস (১-ক্লিক লগইন)" : "Demo Accounts (1-Click Login)"}
+            </span>
+          </div>
+          <span className="text-[10px] font-medium bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full">
+            {lang === "bn" ? "কোন ওটিপি লাগবে না" : "No OTP / Instant"}
           </span>
         </div>
+        <p className="text-[11px] text-neutral-600 dark:text-neutral-400">
+          {lang === "bn"
+            ? "টেস্টিংয়ের সুবিধার জন্য সরাসরি যেকোনো অ্যাকাউন্টে এক ক্লিকে লগইন করুন:"
+            : "Click any demo role below for instant testing access (zero verification needed):"}
+        </p>
         <div className="grid grid-cols-1 gap-2">
           <button
             type="button"
+            disabled={loading}
             onClick={() => directDemoLogin("01711223344", "Rahim Chowdhury")}
-            className="btn-ghost text-xs justify-between w-full"
+            className="btn-ghost text-xs justify-between w-full hover:bg-emerald-100/50 dark:hover:bg-emerald-900/40 py-2 border border-emerald-200 dark:border-emerald-800/60"
           >
-            <span>Rahim Chowdhury (Seller)</span>
-            <span className="font-mono text-neutral-400">01711223344</span>
+            <span className="font-semibold text-neutral-800 dark:text-neutral-200">Rahim Chowdhury (Demo Seller)</span>
+            <span className="font-mono text-emerald-700 dark:text-emerald-400 font-medium">01711223344</span>
           </button>
           <button
             type="button"
+            disabled={loading}
             onClick={() => directDemoLogin("01755667788", "Nusrat Jahan")}
-            className="btn-ghost text-xs justify-between w-full"
+            className="btn-ghost text-xs justify-between w-full hover:bg-emerald-100/50 dark:hover:bg-emerald-900/40 py-2 border border-emerald-200 dark:border-emerald-800/60"
           >
-            <span>Nusrat Jahan (Buyer)</span>
-            <span className="font-mono text-neutral-400">01755667788</span>
+            <span className="font-semibold text-neutral-800 dark:text-neutral-200">Nusrat Jahan (Demo Buyer)</span>
+            <span className="font-mono text-emerald-700 dark:text-emerald-400 font-medium">01755667788</span>
           </button>
           <button
             type="button"
+            disabled={loading}
             onClick={() => directDemoLogin("01700000000", "PakkaDeal Admin")}
-            className="btn-ghost text-xs justify-between w-full border-accent/40"
+            className="btn-ghost text-xs justify-between w-full border border-accent/40 bg-accent/5 hover:bg-accent/15 py-2"
           >
-            <span className="font-semibold text-accent">{t("loginQuickAdmin")}</span>
-            <span className="font-mono text-neutral-400">01700000000</span>
+            <span className="font-bold text-accent">PakkaDeal Admin (Full Control)</span>
+            <span className="font-mono text-accent font-medium">01700000000</span>
           </button>
         </div>
       </div>

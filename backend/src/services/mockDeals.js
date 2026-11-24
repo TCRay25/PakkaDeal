@@ -1647,7 +1647,7 @@ export async function seed50MockDeals({ force = false } = {}) {
         ship_by, confirm_by, auto_release_at, auto_release_paused,
         payment_method, payment_sender, payment_trx_id, payment_amount,
         payment_status, payout_status, payout_trx_id, payout_at, is_manual_courier,
-        trusted_discount_percent, trusted_discount_applied, is_buyer_trusted,
+        trusted_discount_percent, trusted_discount_applied, is_buyer_trusted, is_demo,
         mismatch_status, claim_reason, decision_record,
         created_at, updated_at
       ) values(
@@ -1659,9 +1659,9 @@ export async function seed50MockDeals({ force = false } = {}) {
         $36, $37, $38, $39,
         $40, $41, $42, $43,
         $44, $45, $46, $47, $48,
-        $49, $50, $51,
-        $52, $53, $54,
-        $55, $56
+        $49, $50, $51, $52,
+        $53, $54, $55,
+        $56, $57
       ) returning id`,
       [
         d.code,
@@ -1715,6 +1715,7 @@ export async function seed50MockDeals({ force = false } = {}) {
         d.trusted_discount_percent || 0,
         d.trusted_discount_applied || 0,
         d.is_buyer_trusted || 0,
+        1, // is_demo
         d.mismatch_status || "none",
         d.claim_reason || "",
         d.decision_record ? JSON.stringify(d.decision_record) : "",

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { randomBytes, createHash } from "node:crypto";
 import multer from "multer";
-import { config } from "../config.js";
+import { config, isDemoPhone } from "../config.js";
 import { one, q, transaction } from "../db.js";
 import { adminOnly, auth, fail, isAdmin, optionalAuth } from "../http.js";
 import { PHONE } from "./auth.js";
@@ -45,13 +45,31 @@ const upload = multer({
   },
 });
 
-export async function loadDeal(codeOrId) {
+export function isDemoDeal(deal) {
+  if (!deal) return false;
+  if (deal.is_demo === 1 || deal.is_demo === true) return true;
+  const c = String(deal.code || "");
+  return c.startsWith("PK-MOCK-") || c.startsWith("PK-PROD-") || c.startsWith("PK-RENT-") || c.startsWith("PK-SERV-");
+}
+
+export function isDemoOrAdminUser(user) {
+  if (!user) return false;
+  if (isAdmin(user)) return true;
+  return isDemoPhone(user.phone);
+}
+
+export async function loadDeal(codeOrId, user) {
   try {
     let deal = await one(
       "select * from deals where code=$1 or id=$2",
       [String(codeOrId), Number(codeOrId) || 0]
     );
     if (!deal) fail(404, "Deal not found");
+    if (user !== undefined && user !== null) {
+      if (isDemoDeal(deal) && !isDemoOrAdminUser(user)) {
+        fail(404, "Deal not found");
+      }
+    }
     if (!deal.buyer_id && deal.buyer_phone) {
       const buyer = await one("select id from users where phone=$1", [deal.buyer_phone]);
       if (buyer?.id) {
@@ -71,6 +89,11 @@ export async function loadDeal(codeOrId) {
           [String(codeOrId), Number(codeOrId) || 0]
         );
         if (!deal) fail(404, "Deal not found");
+        if (user !== undefined && user !== null) {
+          if (isDemoDeal(deal) && !isDemoOrAdminUser(user)) {
+            fail(404, "Deal not found");
+          }
+        }
         if (!deal.buyer_id && deal.buyer_phone) {
           const buyer = await one("select id from users where phone=$1", [deal.buyer_phone]);
           if (buyer?.id) {
@@ -261,6 +284,7 @@ router.get("/", auth, async (req, res) => {
   const { status, type, role, q: search } = req.query;
 
   const userPhone11 = (req.user.phone || "").replace(/\D/g, "").slice(-11);
+  const userIsDemoOrAdmin = isDemoOrAdminUser(req.user);
 
   let query = `
     select d.*, u.page_name, u.name as seller_name, u.phone as seller_phone
@@ -276,6 +300,11 @@ router.get("/", auth, async (req, res) => {
     )
   `;
   const params = [req.user.id, req.user.phone, userPhone11];
+
+  // Demo data isolation: newly created accounts never see demo data!
+  if (!userIsDemoOrAdmin) {
+    query += ` and coalesce(d.is_demo, 0) = 0 and d.code not like 'PK-MOCK-%' and d.code not like 'PK-PROD-%' and d.code not like 'PK-RENT-%' and d.code not like 'PK-SERV-%'`;
+  }
 
   if (status) {
     params.push(status);
@@ -488,7 +517,14 @@ router.post("/", auth, upload.array("listing_photos", 3), async (req, res) => {
 });
 
 router.get("/:code", optionalAuth, async (req, res) => {
-  const deal = await loadDeal(req.params.code);
+  const deal = await loadDeal(req.params.code, req.user);
+
+  // Demo deals can only be viewed by demo accounts and admin
+  if (isDemoDeal(deal)) {
+    if (!req.user || !isDemoOrAdminUser(req.user)) {
+      return fail(404, "Deal not found");
+    }
+  }
 
   if (!req.user) {
     const seller = await one(

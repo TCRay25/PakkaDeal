@@ -25,7 +25,7 @@ export const config = {
   secretKey,
   corsOrigins: (process.env.CORS_ORIGINS || "http://localhost:3000,http://127.0.0.1:3000").split(",").map((s) => s.trim()),
   demoOtp: process.env.DEMO_OTP || "123456",
-  demoPhones: (process.env.DEMO_PHONES || "01700000000,01711223344,01755667788").split(",").map((s) => s.trim()),
+  demoPhones: (process.env.DEMO_PHONES || "01700000000,01711223344,01755667788,01811223344,01911223344,01710112233").split(",").map((s) => s.trim()),
   adminPhones: (process.env.ADMIN_PHONES || "01700000000").split(",").map((s) => s.trim()),
   webhookKey,
   shipWithinHours: Number(process.env.SHIP_WITHIN_HOURS || 48),
@@ -35,6 +35,6 @@ export const config = {
 };
 
 export function isDemoPhone(phone) {
-  const p = (phone || "").trim();
+  const p = (phone || "").replace(/\D/g, "").slice(-11);
   return config.demoPhones.includes(p) || config.adminPhones.includes(p);
 }

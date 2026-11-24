@@ -1,20 +1,24 @@
 import { Router } from "express";
 import { one, q } from "../db.js";
-import { auth, fail } from "../http.js";
+import { auth, fail, isAdmin } from "../http.js";
 import { getBuyer } from "../services/trust.js";
 import { PHONE } from "./auth.js";
+import { isDemoPhone } from "../config.js";
 
 const router = Router();
 
-const sellerStats = async (id) => {
+const sellerStats = async (id, isDemoOrAdmin = true) => {
   try {
+    const demoFilter = !isDemoOrAdmin
+      ? " and coalesce(is_demo, 0) = 0 and code not like 'PK-MOCK-%' and code not like 'PK-PROD-%' and code not like 'PK-RENT-%' and code not like 'PK-SERV-%'"
+      : "";
     const row = await one(
       `select
          count(*) filter (where outcome in ('delivered', 'buyer_confirmed', 'both_confirmed', 'auto_release_timeout')) as completed,
          count(*) filter (where outcome in ('refused', 'refused_at_door')) as refused,
          count(*) filter (where outcome = 'dispute_upheld') as disputes,
          count(*) filter (where status in ('held', 'shipped', 'delivered')) as active_deals
-       from deals where seller_id=$1`,
+       from deals where seller_id=$1 ${demoFilter}`,
       [id]
     );
     return {
@@ -31,8 +35,13 @@ const sellerStats = async (id) => {
 
 router.get("/me", auth, async (req, res) => {
   try {
-    const sStats = await sellerStats(req.user.id);
+    const isDemoOrAdmin = isDemoPhone(req.user.phone) || isAdmin(req.user);
+    const sStats = await sellerStats(req.user.id, isDemoOrAdmin);
     const bStats = await getBuyer(req.user.phone);
+
+    const demoFilter = !isDemoOrAdmin
+      ? " and (d.code is null or (coalesce(d.is_demo, 0) = 0 and d.code not like 'PK-MOCK-%' and d.code not like 'PK-PROD-%' and d.code not like 'PK-RENT-%' and d.code not like 'PK-SERV-%'))"
+      : "";
 
     const walletSummary = await one(
       `select
@@ -40,7 +49,7 @@ router.get("/me", auth, async (req, res) => {
          coalesce(sum(amount) filter (where transaction_type = 'refund_buyer'), 0) as total_refunds_received,
          coalesce(sum(amount) filter (where transaction_type = 'hold'), 0) as total_escrow_deposited
        from ledger
-       where party_phone = $1 or deal_id in (select id from deals where seller_id = $2)`,
+       where (party_phone = $1 or deal_id in (select id from deals where seller_id = $2))`,
       [req.user.phone, req.user.id]
     );
 
@@ -48,7 +57,8 @@ router.get("/me", auth, async (req, res) => {
       `select l.id, l.transaction_type, l.amount, l.notes, l.created_at, d.code as deal_code, d.product as deal_product
        from ledger l
        left join deals d on d.id = l.deal_id
-       where l.party_phone = $1 or d.seller_id = $2
+       where (l.party_phone = $1 or d.seller_id = $2)
+       ${demoFilter}
        order by l.id desc limit 50`,
       [req.user.phone, req.user.id]
     );
