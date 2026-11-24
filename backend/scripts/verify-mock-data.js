@@ -12,7 +12,8 @@ async function verify() {
     (await one("select count(*) as cnt from deals where code like 'PK-MOCK-%' and payment_mode='delivery_only'"))?.cnt || 0
   );
 
-  if (count < 50 || delivOnlyCount < 20) {
+  const shouldForce = process.argv.includes("--force") || count < 50 || delivOnlyCount < 20;
+  if (shouldForce) {
     console.log("Seeding / refreshing 50 mock deals before verification...");
     await seed50MockDeals({ force: true });
     countRow = await one("select count(*) as cnt from deals where code like 'PK-MOCK-%'");
@@ -82,6 +83,8 @@ async function verify() {
       feePercent: 1.0,
       feeMin: 10,
       minDeposit: 60,
+      trustedDiscountPercent: Number(d.trusted_discount_percent || 0),
+      isBuyerTrusted: !!d.is_buyer_trusted,
     });
 
     assert(
@@ -102,14 +105,80 @@ async function verify() {
     );
   }
 
-  // 3. Required demos: delivered, refused-at-door, seller-timeout refund, seller-fault dispute
+  // 3. Required Demo Scenarios: (a) - (f)
+  // (a) Trusted buyer with reduced deposit
+  const demoA = deals.find((d) => d.code === "PK-MOCK-A-TRUSTED");
+  assert(demoA, "Missing demo scenario (a): PK-MOCK-A-TRUSTED");
+  if (demoA) {
+    assert(Number(demoA.is_buyer_trusted) === 1, "Demo (a) must have is_buyer_trusted=1");
+    assert(Number(demoA.trusted_discount_applied) === 1, "Demo (a) must have trusted_discount_applied=1");
+    assert(Number(demoA.trusted_discount_percent) === 50, "Demo (a) must have trusted_discount_percent=50");
+    const expA = computeAmounts({
+      dealType: "product",
+      mode: "delivery_only",
+      price: demoA.price,
+      charge: demoA.delivery_charge,
+      returnCharge: demoA.return_charge,
+      feePercent: 1.0,
+      feeMin: 10,
+      minDeposit: 60,
+      trustedDiscountPercent: 50,
+      isBuyerTrusted: true,
+    });
+    assert(Number(demoA.total_amount) === expA.total_amount, `Demo (a) total_amount (${demoA.total_amount}) !== expected (${expA.total_amount})`);
+  }
+
+  // (b) 3-instalment deal
+  const demoB = deals.find((d) => d.code === "PK-MOCK-B-3INSTAL");
+  assert(demoB, "Missing demo scenario (b): PK-MOCK-B-3INSTAL");
+  if (demoB) {
+    const instB = await q("select * from deal_installments where deal_id=$1 order by seq", [demoB.id]);
+    assert(instB.length === 3, `Demo (b) must have 3 installments, found ${instB.length}`);
+    assert(demoB.status === "partially_funded", `Demo (b) status must be partially_funded, found ${demoB.status}`);
+  }
+
+  // (c) Missed instalment with refund
+  const demoC = deals.find((d) => d.code === "PK-MOCK-C-MISSED-INST");
+  assert(demoC, "Missing demo scenario (c): PK-MOCK-C-MISSED-INST");
+  if (demoC) {
+    assert(demoC.status === "cancelled", `Demo (c) status must be cancelled, found ${demoC.status}`);
+    const ledgerC = await q("select * from ledger where deal_id=$1", [demoC.id]);
+    const holdsC = ledgerC.filter((l) => l.transaction_type === "hold").reduce((s, l) => s + Number(l.amount), 0);
+    const refundsC = ledgerC.filter((l) => l.transaction_type === "refund_buyer").reduce((s, l) => s + Number(l.amount), 0);
+    assert(holdsC > 0 && holdsC === refundsC, `Demo (c) holds (${holdsC}) must equal refunds (${refundsC})`);
+  }
+
+  // (d) Mismatch claim upheld
+  const demoD = deals.find((d) => d.code === "PK-MOCK-D-MISMATCH-UPHELD");
+  assert(demoD, "Missing demo scenario (d): PK-MOCK-D-MISMATCH-UPHELD");
+  if (demoD) {
+    assert(demoD.mismatch_status === "upheld", `Demo (d) mismatch_status must be upheld, found ${demoD.mismatch_status}`);
+    assert(demoD.status === "refunded", `Demo (d) status must be refunded, found ${demoD.status}`);
+    const sellerLiab = await one("select * from seller_liabilities where deal_id=$1", [demoD.id]);
+    assert(sellerLiab && Number(sellerLiab.amount) === Number(demoD.price), `Demo (d) must have seller liability equal to price (${demoD.price})`);
+  }
+
+  // (e) Mismatch claim rejected
+  const demoE = deals.find((d) => d.code === "PK-MOCK-E-MISMATCH-REJECTED");
+  assert(demoE, "Missing demo scenario (e): PK-MOCK-E-MISMATCH-REJECTED");
+  if (demoE) {
+    assert(demoE.mismatch_status === "rejected", `Demo (e) mismatch_status must be rejected, found ${demoE.mismatch_status}`);
+    assert(demoE.status === "released", `Demo (e) status must be released, found ${demoE.status}`);
+  }
+
+  // (f) Refused parcel with compensation
+  const demoF = deals.find((d) => d.code === "PK-MOCK-F-REFUSED");
+  assert(demoF, "Missing demo scenario (f): PK-MOCK-F-REFUSED");
+  if (demoF) {
+    assert(demoF.outcome === "refused_at_door" || demoF.courier_status === "refused", `Demo (f) must be refused at door`);
+    const ledgerF = await q("select * from ledger where deal_id=$1", [demoF.id]);
+    const payoutsF = ledgerF.filter((l) => l.transaction_type === "payout_seller").reduce((s, l) => s + Number(l.amount), 0);
+    const expectedComp = Math.min(Number(demoF.held_amount), Number(demoF.delivery_charge) + Number(demoF.return_charge));
+    assert(payoutsF === expectedComp, `Demo (f) seller compensation (${payoutsF}) must equal expected (${expectedComp})`);
+  }
+
   const deliveredDemo = deals.find((d) => d.status === "delivered");
   assert(deliveredDemo, "Missing delivered demo deal (status='delivered')");
-
-  const refusedDemo = deals.find(
-    (d) => d.outcome === "refused_at_door" || d.status === "refused" || d.courier_status === "refused"
-  );
-  assert(refusedDemo, "Missing refused-at-door demo deal (outcome='refused_at_door' or courier_status='refused')");
 
   const timeoutDemo = deals.find(
     (d) => d.status === "refunded" && d.outcome === "seller_ship_timeout"
@@ -141,7 +210,27 @@ async function verify() {
   for (const d of deals) {
     const ledgerRows = await q("select * from ledger where deal_id=$1", [d.id]);
 
-    if (fundedStatuses.includes(d.status)) {
+    if (d.status === "partially_funded") {
+      const instRows = await q("select * from deal_installments where deal_id=$1 and status='confirmed'", [d.id]);
+      const expectedHold = instRows.reduce((s, r) => s + Number(r.amount), 0);
+      const actualHold = ledgerRows.filter((l) => l.transaction_type === "hold").reduce((s, l) => s + Number(l.amount), 0);
+      assert(
+        actualHold === expectedHold,
+        `${d.code} (partially_funded) ledger hold (${actualHold}) must equal confirmed installments (${expectedHold})`
+      );
+    } else if (d.status === "cancelled") {
+      const holds = ledgerRows.filter((l) => l.transaction_type === "hold").reduce((s, l) => s + Number(l.amount), 0);
+      const refunds = ledgerRows.filter((l) => l.transaction_type === "refund_buyer").reduce((s, l) => s + Number(l.amount), 0);
+      assert(
+        holds === refunds,
+        `${d.code} (cancelled) holds (${holds}) must equal refunds (${refunds})`
+      );
+    } else if (d.status === "created" || d.status === "payment_pending") {
+      assert(
+        ledgerRows.length === 0,
+        `${d.code} (${d.status}) must have no ledger rows, found ${ledgerRows.length}`
+      );
+    } else if (fundedStatuses.includes(d.status)) {
       // Must have hold row equal to total_amount
       const holdRows = ledgerRows.filter((l) => l.transaction_type === "hold");
       assert(
@@ -173,7 +262,7 @@ async function verify() {
     }
 
     if (d.status === "refunded") {
-      // Final status refunded: refund_buyer (+ payout_seller + fee if return deduction) === total_amount
+      // Final status refunded: refund_buyer (+ payout_seller + fee if return deduction or upheld claim) === total_amount
       const refunds = ledgerRows.filter((l) => l.transaction_type === "refund_buyer");
       const payouts = ledgerRows.filter((l) => l.transaction_type === "payout_seller");
       const fees = ledgerRows.filter((l) => l.transaction_type === "platform_fee");
@@ -196,14 +285,6 @@ async function verify() {
       assert(
         payouts.length === 0 && refunds.length === 0,
         `${d.code} (disputed) has premature payouts or refunds while dispute is pending`
-      );
-    }
-
-    if (d.status === "created" || d.status === "payment_pending" || d.status === "cancelled") {
-      // Unfunded deals must have 0 ledger rows
-      assert(
-        ledgerRows.length === 0,
-        `${d.code} (${d.status}) must have no ledger rows, found ${ledgerRows.length}`
       );
     }
   }

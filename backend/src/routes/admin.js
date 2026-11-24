@@ -905,4 +905,203 @@ router.post("/seed-mock-deals", async (_req, res) => {
   }
 });
 
+/**
+ * ============================================================================
+ * ADMIN CHALLENGE 1B: Installments Management
+ * ============================================================================
+ */
+router.get("/installments/pending", async (_req, res) => {
+  const rows = await q(`
+    select i.*, d.code as deal_code, d.product as deal_product, d.buyer_name, d.buyer_phone,
+           d.total_amount, d.held_amount, d.fee_amount, u.name as seller_name, u.page_name
+    from deal_installments i
+    join deals d on d.id = i.deal_id
+    join users u on u.id = d.seller_id
+    where i.status = 'submitted'
+    order by i.id desc
+  `);
+  res.json(rows);
+});
+
+router.post("/deals/:code/installments/:seq/confirm", async (req, res) => {
+  const deal = await one("select * from deals where code=$1 or id=$2", [req.params.code, Number(req.params.code) || 0]);
+  if (!deal) fail(404, "Deal not found");
+
+  const seq = parseInt(req.params.seq, 10);
+  const inst = await one("select * from deal_installments where deal_id=$1 and seq=$2", [deal.id, seq]);
+  if (!inst) fail(404, `Installment #${seq} not found`);
+  if (inst.status === "confirmed") {
+    fail(400, `Installment #${seq} is already confirmed`);
+  }
+
+  const { deal: updatedDeal, installments: allInsts } = await transaction(async () => {
+    await q(
+      `update deal_installments set
+         status = 'confirmed',
+         confirmed_at = CURRENT_TIMESTAMP
+       where id = $1`,
+      [inst.id]
+    );
+
+    await addLedger({
+      dealId: deal.id,
+      type: "hold",
+      amount: inst.amount,
+      partyPhone: inst.sender_phone || deal.buyer_phone,
+      notes: `Escrow installment #${seq} confirmed by admin (TrxID: ${inst.trx_id || "N/A"})`,
+    });
+
+    const all = await q(
+      "select seq, amount, status from deal_installments where deal_id = $1 order by seq asc",
+      [deal.id]
+    );
+
+    const allConfirmed = all.every((i) => i.status === "confirmed");
+    const shipHours = Number(await getSetting("ship_within_hours", config.shipWithinHours || 48));
+    const shipBy = new Date(Date.now() + shipHours * 36e5).toISOString();
+
+    let upd = null;
+    if (allConfirmed) {
+      const u = await q(
+        `update deals set
+           status = 'held',
+           payment_status = 'confirmed',
+           ship_by = coalesce(ship_by, $2),
+           deposit = total_amount,
+           updated_at = CURRENT_TIMESTAMP
+         where id = $1
+         returning *`,
+        [deal.id, shipBy]
+      );
+      upd = u[0];
+
+      await log(
+        deal.id,
+        "paid",
+        `All installments confirmed. Deal is fully funded in escrow (${deal.total_amount} BDT). Ready for dispatch.`,
+        { fromStatus: deal.status, toStatus: "held", actor: "admin" }
+      );
+      await notify(
+        deal.buyer_phone,
+        `PakkaDeal #${deal.code}: All installments confirmed! Funds secured in escrow.`,
+        "Deal Fully Funded",
+        deal.code
+      );
+      await notifySeller(
+        deal.seller_id,
+        `PakkaDeal #${deal.code}: Buyer completed all installment payments. You can now dispatch the parcel.`,
+        "All Installments Confirmed – Ship Parcel",
+        deal.code
+      );
+    } else {
+      const u = await q(
+        `update deals set
+           status = 'partially_funded',
+           payment_status = 'partial',
+           updated_at = CURRENT_TIMESTAMP
+         where id = $1 and status in ('created', 'payment_pending', 'partially_funded')
+         returning *`,
+        [deal.id]
+      );
+      upd = u[0] || deal;
+
+      await log(
+        deal.id,
+        "partially_funded",
+        `Installment #${seq} confirmed (${inst.amount} BDT). Deal is partially funded.`,
+        { fromStatus: deal.status, toStatus: "partially_funded", actor: "admin" }
+      );
+      await notify(
+        deal.buyer_phone,
+        `PakkaDeal #${deal.code}: Installment #${seq} payment (${inst.amount} BDT) confirmed.`,
+        "Installment Confirmed",
+        deal.code
+      );
+    }
+
+    return { deal: upd, installments: all };
+  });
+
+  res.json({ ok: true, deal: updatedDeal, installments: allInsts });
+});
+
+router.post("/deals/:code/installments/:seq/reject", async (req, res) => {
+  const deal = await one("select * from deals where code=$1 or id=$2", [req.params.code, Number(req.params.code) || 0]);
+  if (!deal) fail(404, "Deal not found");
+  const seq = parseInt(req.params.seq, 10);
+  const reason = (req.body.reason || "Payment could not be verified").trim();
+
+  await q(
+    `update deal_installments set status='pending', trx_id='', submitted_at=null where deal_id=$1 and seq=$2 and status='submitted'`,
+    [deal.id, seq]
+  );
+  await log(deal.id, "installment_rejected", `Installment #${seq} rejected by admin. Reason: ${reason}`, { actor: "admin" });
+  res.json({ ok: true, message: `Installment #${seq} rejected` });
+});
+
+/**
+ * ============================================================================
+ * ADMIN CHALLENGE 2: Mismatch Disputes Review & Resolution
+ * ============================================================================
+ */
+router.get("/disputes/mismatches", async (_req, res) => {
+  const rows = await q(`
+    select d.id, d.code, d.product, d.price, d.delivery_charge, d.total_amount, d.held_amount,
+           d.cod_amount, d.payment_mode, d.status, d.mismatch_status, d.seller_response_deadline,
+           d.claim_reason, d.decision_record, d.created_at, d.updated_at,
+           u.name as seller_name, u.phone as seller_phone, u.page_name,
+           d.buyer_name, d.buyer_phone
+    from deals d
+    join users u on u.id = d.seller_id
+    where d.mismatch_status != 'none'
+    order by d.id desc
+  `);
+
+  for (const r of rows) {
+    r.evidence = await q(
+      "select id, role, kind, mime, sha256, created_at from dispute_evidence where deal_id=$1 order by id asc",
+      [r.id]
+    );
+    try {
+      r.decision_record = r.decision_record ? JSON.parse(r.decision_record) : null;
+    } catch (_e) {}
+  }
+
+  res.json(rows);
+});
+
+router.post("/deals/:code/resolve-mismatch", async (req, res) => {
+  const deal = await one("select * from deals where code=$1 or id=$2", [req.params.code, Number(req.params.code) || 0]);
+  if (!deal) fail(404, "Deal not found");
+
+  const { decision, notes = "", seller_amount = 0, buyer_amount = 0 } = req.body;
+  if (!["uphold", "reject", "split"].includes(decision)) {
+    fail(400, "Decision must be 'uphold', 'reject', or 'split'");
+  }
+
+  if (decision === "split") {
+    const sAmt = Math.round(Number(seller_amount) || 0);
+    const bAmt = Math.round(Number(buyer_amount) || 0);
+    const totalHeld = deal.held_amount > 0 ? deal.held_amount : deal.total_amount;
+    if (sAmt + bAmt > totalHeld) {
+      fail(400, `Split amounts (${sAmt} + ${bAmt}) cannot exceed held amount (${totalHeld})`);
+    }
+    const resolved = await adminSplitResolution(deal, sAmt, bAmt, notes, "admin");
+    await q("update deals set mismatch_status='resolved_split', updated_at=CURRENT_TIMESTAMP where id=$1", [deal.id]);
+    return res.json({ ok: true, deal: resolved });
+  }
+
+  const { executeMismatchDecision } = await import("../services/mismatch.js");
+  const resolved = await executeMismatchDecision({
+    deal,
+    outcome: decision,
+    rule: `ADMIN_MANUAL_${decision.toUpperCase()}`,
+    aiResult: { manual_override: true, decision },
+    evidenceIds: [],
+    adminNotes: notes,
+  });
+
+  res.json({ ok: true, deal: resolved });
+});
+
 export default router;

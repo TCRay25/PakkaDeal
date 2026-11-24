@@ -1,5 +1,6 @@
 import { q, one, initDb } from "../db.js";
 import { computeAmounts } from "./amounts.js";
+import { createHash } from "crypto";
 
 export async function seed50MockDeals({ force = false } = {}) {
   await initDb();
@@ -81,6 +82,10 @@ export async function seed50MockDeals({ force = false } = {}) {
     console.log(`Cleaning up ${oldMockDeals.length} existing PK-MOCK-* deals...`);
     for (const om of oldMockDeals) {
       await q("delete from disputes where deal_id=$1", [om.id]);
+      await q("delete from dispute_evidence where deal_id=$1", [om.id]);
+      await q("delete from deal_installments where deal_id=$1", [om.id]);
+      await q("delete from seller_liabilities where deal_id=$1", [om.id]);
+      await q("delete from buyer_liabilities where deal_id=$1", [om.id]);
       await q("delete from tracking_events where deal_id=$1", [om.id]);
       await q("delete from deal_events where deal_id=$1", [om.id]);
       await q("delete from ledger where deal_id=$1", [om.id]);
@@ -89,8 +94,219 @@ export async function seed50MockDeals({ force = false } = {}) {
     }
   }
 
-  // 50 structured mock deal definitions
+  // 56 structured mock deal definitions (including hackathon scenarios a-f)
   const rawDeals = [
+    // =========================================================================
+    // HACKATHON DEMO SCENARIOS (a) - (f)
+    // =========================================================================
+    // (a) Trusted buyer with reduced deposit
+    {
+      code: "PK-MOCK-A-TRUSTED",
+      deal_type: "product",
+      payment_mode: "delivery_only",
+      seller_phone: "01711223344",
+      buyer_phone: "01755667788",
+      buyer_name: "Nusrat Jahan",
+      address: "House 24, Road 7, Dhanmondi, Dhaka",
+      area: "Dhaka",
+      product: "OnePlus 12 5G (Silky Black 16/512GB)",
+      details: "Brand new intact box with manufacturer warranty. Trusted buyer reduced deposit applied.",
+      price: 78000,
+      delivery_charge: 100,
+      return_charge: 100,
+      trusted_discount_percent: 50,
+      is_buyer_trusted: 1,
+      trusted_discount_applied: 1,
+      return_policy: "buyer_pays",
+      status: "held",
+      courier_name: "Steadfast",
+      risk_score: 8,
+      risk_reasons: "High trust verified buyer with deposit discount",
+      buyer_trust: 92,
+      payment_method: "bKash",
+      days_ago: 1,
+    },
+
+    // (b) 3-instalment deal
+    {
+      code: "PK-MOCK-B-3INSTAL",
+      deal_type: "product",
+      payment_mode: "delivery_only",
+      seller_phone: "01711223344",
+      buyer_phone: "01722334455",
+      buyer_name: "Sadia Islam",
+      address: "Flat 3A, House 12, Road 4, Sector 3, Uttara, Dhaka",
+      area: "Dhaka",
+      product: "Sony WH-1000XM5 Wireless Noise Cancelling Headphones",
+      details: "Official Sony Bangladesh warranty. Split into 3 flexible installments.",
+      price: 36000,
+      delivery_charge: 150,
+      return_charge: 150,
+      return_policy: "buyer_pays",
+      status: "partially_funded",
+      courier_name: "Steadfast",
+      risk_score: 14,
+      risk_reasons: "Flexible installment schedule in progress",
+      buyer_trust: 88,
+      payment_method: "bKash",
+      days_ago: 2,
+      installments: [
+        { seq: 1, amount: 130, status: "confirmed", trx_id: "TXINST1", hours_due: -12 },
+        { seq: 2, amount: 90, status: "confirmed", trx_id: "TXINST2", hours_due: 12 },
+        { seq: 3, amount: 90, status: "pending", hours_due: 36 },
+      ],
+    },
+
+    // (c) Missed instalment with refund
+    {
+      code: "PK-MOCK-C-MISSED-INST",
+      deal_type: "product",
+      payment_mode: "delivery_only",
+      seller_phone: "01710112233",
+      buyer_phone: "01655667788",
+      buyer_name: "Arifur Rahman",
+      address: "Holding 18, Road 2, Block C, Mirpur 1, Dhaka",
+      area: "Dhaka",
+      product: "Keychron Q1 Pro Wireless Mechanical Keyboard",
+      details: "Barebone ISO layout, hot-swappable with RGB.",
+      price: 19500,
+      delivery_charge: 120,
+      return_charge: 120,
+      return_policy: "buyer_pays",
+      status: "cancelled",
+      outcome: "installment_expired_before_shipping",
+      courier_name: "Steadfast",
+      risk_score: 20,
+      risk_reasons: "Unpaid installment led to automatic cancellation",
+      buyer_trust: 65,
+      payment_method: "bKash",
+      days_ago: 3,
+      installments: [
+        { seq: 1, amount: 106, status: "confirmed", trx_id: "TXMISSED1", hours_due: -48 },
+        { seq: 2, amount: 144, status: "expired", hours_due: -12 },
+      ],
+    },
+
+    // (d) Mismatch claim upheld
+    {
+      code: "PK-MOCK-D-MISMATCH-UPHELD",
+      deal_type: "product",
+      payment_mode: "delivery_only",
+      seller_phone: "01811223344",
+      buyer_phone: "01755667788",
+      buyer_name: "Nusrat Jahan",
+      address: "House 24, Road 7, Dhanmondi, Dhaka",
+      area: "Dhaka",
+      product: "Samsung Galaxy Watch 6 Classic (47mm LTE Black)",
+      details: "Intact retail package with leather hybrid band.",
+      price: 32000,
+      delivery_charge: 120,
+      return_charge: 120,
+      return_policy: "buyer_pays",
+      status: "refunded",
+      outcome: "mismatch_upheld",
+      courier_name: "Steadfast",
+      tracking_id: "SF-WRONG-ITEM-UPHELD",
+      courier_status: "delivered",
+      mismatch_status: "upheld",
+      claim_reason: "Received empty box with soap bar instead of smartwatch",
+      decision_record: {
+        rule_outcome: "uphold",
+        rule_used: "AI_DIFFERENT_HIGH_CONFIDENCE",
+        ai_decision: {
+          match: "different",
+          confidence: 96,
+          differences: ["Delivered package contained a bath soap bar; listing photos show Samsung Galaxy Watch 6 Classic in sealed box."],
+          flags: ["gross_discrepancy", "verified_label"],
+        },
+      },
+      seller_liability: {
+        amount: 32000,
+        notes: "Buyer paid product price to courier COD on wrong item delivery; seller liability netted from future payouts",
+      },
+      evidence: [
+        { role: "seller", kind: "listing", desc: "Original watch listing photo" },
+        { role: "seller", kind: "pre_dispatch", desc: "Pre-dispatch sealed package" },
+        { role: "buyer", kind: "parcel_label", desc: "Delivery label showing tracking SF-WRONG-ITEM-UPHELD" },
+        { role: "buyer", kind: "unboxing_item", desc: "Soap bar found in package" },
+      ],
+      risk_score: 30,
+      buyer_trust: 92,
+      payment_method: "bKash",
+      days_ago: 4,
+    },
+
+    // (e) Mismatch claim rejected
+    {
+      code: "PK-MOCK-E-MISMATCH-REJECTED",
+      deal_type: "product",
+      payment_mode: "delivery_only",
+      seller_phone: "01711223344",
+      buyer_phone: "01922334455",
+      buyer_name: "Mehedi Hasan",
+      address: "Holding 42, GEC Circle, Chattogram",
+      area: "Chattogram",
+      product: "Fujifilm Instax Mini 12 Instant Camera (Clay White)",
+      details: "Original Fujifilm warranty card, 20 film sheets bundle.",
+      price: 9500,
+      delivery_charge: 100,
+      return_charge: 100,
+      return_policy: "buyer_pays",
+      status: "released",
+      outcome: "mismatch_rejected",
+      courier_name: "Steadfast",
+      tracking_id: "SF-REJECTED-MISMATCH",
+      courier_status: "delivered",
+      mismatch_status: "rejected",
+      claim_reason: "Color looks slightly off-white under indoor lighting",
+      decision_record: {
+        rule_outcome: "reject",
+        rule_used: "AI_SAME_HIGH_CONFIDENCE",
+        ai_decision: {
+          match: "same",
+          confidence: 92,
+          differences: ["Minor lighting color temperature difference; item matches model, shape, lens and markings."],
+          flags: [],
+        },
+      },
+      evidence: [
+        { role: "seller", kind: "listing", desc: "Camera listing photo" },
+        { role: "buyer", kind: "parcel_label", desc: "Parcel label" },
+        { role: "buyer", kind: "unboxing_item", desc: "Delivered camera" },
+      ],
+      risk_score: 15,
+      buyer_trust: 74,
+      payment_method: "bKash",
+      days_ago: 3,
+    },
+
+    // (f) Refused parcel with compensation
+    {
+      code: "PK-MOCK-F-REFUSED",
+      deal_type: "product",
+      payment_mode: "delivery_only",
+      seller_phone: "01711223344",
+      buyer_phone: "01655667788",
+      buyer_name: "Arifur Rahman",
+      address: "Holding 18, Road 2, Block C, Mirpur 1, Dhaka",
+      area: "Dhaka",
+      product: "Logitech MX Master 3S Wireless Performance Mouse",
+      details: "Quiet clicks, 8K DPI tracking on glass, graphite color.",
+      price: 11500,
+      delivery_charge: 120,
+      return_charge: 120,
+      return_policy: "buyer_pays",
+      status: "released",
+      outcome: "refused_at_door",
+      courier_name: "Steadfast",
+      tracking_id: "SF-REFUSED-DOOR",
+      courier_status: "refused",
+      risk_score: 35,
+      risk_reasons: "Parcel rejected at doorstep by recipient without opening",
+      buyer_trust: 60,
+      payment_method: "bKash",
+      days_ago: 4,
+    },
     // --- 1. CREATED (4 deals) ---
     {
       code: "PK-MOCK-01",
@@ -1372,6 +1588,9 @@ export async function seed50MockDeals({ force = false } = {}) {
       : "full_payment";
     const returnCharge = d.return_charge !== undefined ? d.return_charge : (d.delivery_charge || 0);
 
+    const isBuyerTrusted = !!d.is_buyer_trusted;
+    const trustedDiscountPercent = Number(d.trusted_discount_percent || 0);
+
     const amounts = computeAmounts({
       dealType: d.deal_type,
       mode,
@@ -1381,6 +1600,8 @@ export async function seed50MockDeals({ force = false } = {}) {
       feePercent: 1.0,
       feeMin: 10,
       minDeposit: 60,
+      trustedDiscountPercent,
+      isBuyerTrusted,
     });
 
     const totalAmount = amounts.total_amount;
@@ -1418,7 +1639,7 @@ export async function seed50MockDeals({ force = false } = {}) {
 
     const row = await one(
       `insert into deals(
-        code, deal_type, payment_mode, cod_amount, seller_id, buyer_phone, buyer_name, buyer_id, address, area, product, details,
+        code, deal_type, payment_mode, cod_amount, held_amount, seller_id, buyer_phone, buyer_name, buyer_id, address, area, product, details,
         price, delivery_charge, total_amount, fee_amount, fee_percent, seller_payout, deposit,
         return_policy, return_charge, status, outcome, courier_name, tracking_id, courier_status,
         return_courier_name, return_tracking_id, return_courier_status,
@@ -1426,23 +1647,28 @@ export async function seed50MockDeals({ force = false } = {}) {
         ship_by, confirm_by, auto_release_at, auto_release_paused,
         payment_method, payment_sender, payment_trx_id, payment_amount,
         payment_status, payout_status, payout_trx_id, payout_at, is_manual_courier,
+        trusted_discount_percent, trusted_discount_applied, is_buyer_trusted,
+        mismatch_status, claim_reason, decision_record,
         created_at, updated_at
       ) values(
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-        $11, $12, $13, $14, $15, $16, $17, $18, $19,
-        $20, $21, $22, $23, $24, $25, $26,
-        $27, $28, $29,
-        $30, $31, $32, $33, $34,
-        $35, $36, $37, $38,
-        $39, $40, $41, $42,
-        $43, $44, $45, $46, $47,
-        $48, $49
+        $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+        $21, $22, $23, $24, $25, $26, $27,
+        $28, $29, $30,
+        $31, $32, $33, $34, $35,
+        $36, $37, $38, $39,
+        $40, $41, $42, $43,
+        $44, $45, $46, $47, $48,
+        $49, $50, $51,
+        $52, $53, $54,
+        $55, $56
       ) returning id`,
       [
         d.code,
         d.deal_type,
         mode,
         codAmount,
+        amounts.held_amount,
         sellerId,
         d.buyer_phone,
         d.buyer_name,
@@ -1486,6 +1712,12 @@ export async function seed50MockDeals({ force = false } = {}) {
         payoutTrxId,
         payoutAt,
         d.is_manual_courier ? 1 : 0,
+        d.trusted_discount_percent || 0,
+        d.trusted_discount_applied || 0,
+        d.is_buyer_trusted || 0,
+        d.mismatch_status || "none",
+        d.claim_reason || "",
+        d.decision_record ? JSON.stringify(d.decision_record) : "",
         createdAt,
         updatedAt,
       ]
@@ -1493,6 +1725,57 @@ export async function seed50MockDeals({ force = false } = {}) {
 
     const dealId = row.id;
     insertedCount++;
+
+    // Evidence photos if specified
+    if (d.evidence && d.evidence.length > 0) {
+      for (const ev of d.evidence) {
+        const dummyPhoto = Buffer.from(`DUMMY_PHOTO_DATA_${ev.kind}_${d.code}_${Date.now()}`);
+        const dummySha = createHash("sha256").update(dummyPhoto).digest("hex");
+        await q(
+          `insert into dispute_evidence(deal_id, role, kind, photo, mime, sha256, created_at)
+           values($1, $2, $3, $4, 'image/jpeg', $5, $6)`,
+          [dealId, ev.role || "seller", ev.kind, dummyPhoto, dummySha, createdAt]
+        );
+      }
+    }
+
+    // Installment schedule if specified
+    if (d.installments && d.installments.length > 0) {
+      for (const inst of d.installments) {
+        const dueAt = new Date(Date.now() + (inst.hours_due || 24) * 36e5).toISOString();
+        await q(
+          `insert into deal_installments(deal_id, seq, amount, due_at, status, trx_id, payment_method, sender_phone, submitted_at, confirmed_at)
+           values($1, $2, $3, $4, $5, $6, 'bKash', $7, $8, $9)`,
+          [dealId, inst.seq, inst.amount, dueAt, inst.status, inst.trx_id || "", d.buyer_phone, createdAt, inst.status === "confirmed" ? createdAt : null]
+        );
+
+        if (inst.status === "confirmed") {
+          await q(
+            `insert into ledger(deal_id, transaction_type, amount, party_phone, balance_after, notes, created_at)
+             values($1, 'hold', $2, $3, $2, $4, $5)`,
+            [dealId, inst.amount, d.buyer_phone, `Escrow installment #${inst.seq} hold confirmed for ${d.product}`, createdAt]
+          );
+        }
+      }
+    }
+
+    // Seller liability if specified
+    if (d.seller_liability) {
+      await q(
+        `insert into seller_liabilities(deal_id, seller_id, amount, status, reason, created_at)
+         values($1, $2, $3, 'open', $4, $5)`,
+        [dealId, sellerId, d.seller_liability.amount, d.seller_liability.notes || d.seller_liability.reason || "", updatedAt]
+      );
+    }
+
+    // Buyer liability if specified
+    if (d.buyer_liability) {
+      await q(
+        `insert into buyer_liabilities(deal_id, phone, amount, status, reason, created_at)
+         values($1, $2, $3, 'open', $4, $5)`,
+        [dealId, d.buyer_phone, d.buyer_liability.amount, d.buyer_liability.notes || d.buyer_liability.reason || "", updatedAt]
+      );
+    }
 
     // 1. Insert Deal Events (Progression History)
     await q(
@@ -1509,7 +1792,7 @@ export async function seed50MockDeals({ force = false } = {}) {
       );
     }
 
-    if (isFunded) {
+    if (isFunded && (!d.installments || d.installments.length === 0)) {
       await q(
         `insert into deal_events(deal_id, kind, from_status, to_status, actor, note, created_at)
          values($1, 'paid', 'created', 'held', 'buyer', $2, $3)`,
@@ -1568,7 +1851,23 @@ export async function seed50MockDeals({ force = false } = {}) {
     }
 
     if (d.status === "released") {
-      if (d.outcome === "refused_at_door") {
+      if (d.outcome === "mismatch_rejected") {
+        await q(
+          `insert into deal_events(deal_id, kind, from_status, to_status, actor, note, created_at)
+           values($1, 'released', 'delivered', 'released', 'system', $2, $3)`,
+          [dealId, `Mismatch claim rejected (verified same item). Funds released: ${sellerPayout} BDT to seller, ${feeAmount} BDT platform fee.`, updatedAt]
+        );
+        await q(
+          `insert into ledger(deal_id, transaction_type, amount, party_phone, balance_after, notes, created_at)
+           values($1, 'payout_seller', $2, $3, $4, $5, $6)`,
+          [dealId, sellerPayout, d.seller_phone, feeAmount, `Payout to seller following rejected mismatch claim for ${d.code}`, updatedAt]
+        );
+        await q(
+          `insert into ledger(deal_id, transaction_type, amount, party_phone, balance_after, notes, created_at)
+           values($1, 'platform_fee', $2, 'system', 0, $3, $4)`,
+          [dealId, feeAmount, `Platform escrow fee for deal ${d.code}`, updatedAt]
+        );
+      } else if (d.outcome === "refused_at_door") {
         const deliveryCharge = d.delivery_charge || 0;
         const deliveryAndReturn = deliveryCharge + returnCharge;
         const compensation = Math.min(amounts.held_amount, deliveryAndReturn);
@@ -1674,7 +1973,23 @@ export async function seed50MockDeals({ force = false } = {}) {
     }
 
     if (d.status === "refunded") {
-      if (d.outcome === "return_received") {
+      if (d.outcome === "mismatch_upheld") {
+        await q(
+          `insert into deal_events(deal_id, kind, from_status, to_status, actor, note, created_at)
+           values($1, 'refunded', 'delivered', 'refunded', 'system', $2, $3)`,
+          [dealId, `Mismatch claim upheld by AI & rules. Held deposit (${amounts.held_amount} BDT) refunded to buyer; platform fee (${amounts.fee_amount} BDT) collected. Seller liability of ${d.price} BDT recorded.`, updatedAt]
+        );
+        await q(
+          `insert into ledger(deal_id, transaction_type, amount, party_phone, balance_after, notes, created_at)
+           values($1, 'refund_buyer', $2, $3, 0, $4, $5)`,
+          [dealId, amounts.held_amount, d.buyer_phone, `Refund of held delivery charge on upheld mismatch for ${d.code}`, updatedAt]
+        );
+        await q(
+          `insert into ledger(deal_id, transaction_type, amount, party_phone, balance_after, notes, created_at)
+           values($1, 'platform_fee', $2, 'system', 0, $3, $4)`,
+          [dealId, amounts.fee_amount, `Platform escrow fee for deal ${d.code}`, updatedAt]
+        );
+      } else if (d.outcome === "return_received") {
         const returnDeduction = d.return_policy === "buyer_pays" ? (d.delivery_charge || 0) : 0;
         const platformFeeRet = feeAmount;
         const refundAmountRet = Math.max(0, totalAmount - returnDeduction - platformFeeRet);
@@ -1727,9 +2042,19 @@ export async function seed50MockDeals({ force = false } = {}) {
     }
 
     if (d.status === "cancelled") {
+      if (d.outcome === "installment_expired_before_shipping" && d.installments) {
+        const confirmedSum = d.installments.filter(i => i.status === "confirmed").reduce((s, i) => s + i.amount, 0);
+        if (confirmedSum > 0) {
+          await q(
+            `insert into ledger(deal_id, transaction_type, amount, party_phone, balance_after, notes, created_at)
+             values($1, 'refund_buyer', $2, $3, 0, $4, $5)`,
+            [dealId, confirmedSum, d.buyer_phone, `Refund of confirmed installments on missed installment for ${d.code}`, updatedAt]
+          );
+        }
+      }
       await q(
         `insert into deal_events(deal_id, kind, from_status, to_status, actor, note, created_at)
-         values($1, 'cancelled', 'created', 'cancelled', 'seller', 'Deal cancelled by seller before buyer payment.', $2)`,
+         values($1, 'cancelled', 'created', 'cancelled', 'seller', 'Deal cancelled: ${d.outcome || "before payment"}', $2)`,
         [dealId, updatedAt]
       );
     }

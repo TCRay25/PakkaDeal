@@ -286,17 +286,6 @@ export async function initDb() {
         payment_trx_id text not null default '',
         payment_amount int not null default 0,
         payment_status text not null default 'none',
-        payment_submitted_at timestamptz,
-        payment_rejection_reason text not null default '',
-        payout_status text not null default 'none',
-        payout_trx_id text not null default '',
-        payout_at timestamptz,
-        return_seller_trx_id text not null default '',
-        return_seller_paid_at timestamptz,
-        return_buyer_trx_id text not null default '',
-        return_buyer_paid_at timestamptz,
-        payment_amount int not null default 0,
-        payment_status text not null default 'none',
         payment_submitted_at text,
         payment_rejection_reason text not null default '',
         payout_status text not null default 'none',
@@ -306,6 +295,14 @@ export async function initDb() {
         return_seller_paid_at text,
         return_buyer_trx_id text not null default '',
         return_buyer_paid_at text,
+        held_amount int not null default 0,
+        trusted_discount_percent int not null default 0,
+        trusted_discount_applied int not null default 0,
+        is_buyer_trusted int not null default 0,
+        mismatch_status text not null default 'none',
+        seller_response_deadline text,
+        claim_reason text not null default '',
+        decision_record text not null default '',
         created_at text not null default (datetime('now')),
         updated_at text not null default (datetime('now'))
       );
@@ -393,6 +390,59 @@ export async function initDb() {
         created_at text not null default (datetime('now'))
       );
       create index if not exists tracking_events_deal_idx on tracking_events(deal_id);
+
+      create table if not exists buyer_liabilities (
+        id integer primary key autoincrement,
+        deal_id int,
+        phone text not null,
+        amount int not null,
+        reason text not null default '',
+        status text not null default 'open',
+        created_at text not null default (datetime('now')),
+        cleared_at text
+      );
+      create index if not exists buyer_liabilities_phone_idx on buyer_liabilities(phone);
+
+      create table if not exists seller_liabilities (
+        id integer primary key autoincrement,
+        seller_id int not null,
+        deal_id int,
+        amount int not null,
+        reason text not null default '',
+        status text not null default 'open',
+        created_at text not null default (datetime('now')),
+        netted_payout_id int
+      );
+      create index if not exists seller_liabilities_seller_idx on seller_liabilities(seller_id);
+
+      create table if not exists deal_installments (
+        id integer primary key autoincrement,
+        deal_id int not null,
+        seq int not null,
+        amount int not null,
+        due_at text not null,
+        status text not null default 'pending',
+        trx_id text not null default '',
+        sender_phone text not null default '',
+        payment_method text not null default 'bKash',
+        submitted_at text,
+        confirmed_at text,
+        created_at text not null default (datetime('now'))
+      );
+      create index if not exists deal_installments_deal_idx on deal_installments(deal_id);
+
+      create table if not exists dispute_evidence (
+        id integer primary key autoincrement,
+        deal_id int not null,
+        role text not null,
+        kind text not null,
+        photo blob,
+        mime text not null default 'image/jpeg',
+        sha256 text not null,
+        created_at text not null default (datetime('now'))
+      );
+      create index if not exists dispute_evidence_deal_idx on dispute_evidence(deal_id);
+      create index if not exists dispute_evidence_sha_idx on dispute_evidence(sha256);
     `);
   } else {
     // Ensure PostgreSQL supports datetime('now') and datetime('now', '-15 minutes') as fallback
@@ -531,6 +581,14 @@ export async function initDb() {
         return_seller_paid_at timestamptz,
         return_buyer_trx_id text not null default '',
         return_buyer_paid_at timestamptz,
+        held_amount int not null default 0,
+        trusted_discount_percent int not null default 0,
+        trusted_discount_applied int not null default 0,
+        is_buyer_trusted int not null default 0,
+        mismatch_status text not null default 'none',
+        seller_response_deadline timestamptz,
+        claim_reason text not null default '',
+        decision_record text not null default '',
         is_manual_courier int not null default 0,
         courier_phone text not null default '',
         consignment_slip bytea,
@@ -627,6 +685,59 @@ export async function initDb() {
         created_at timestamptz not null default now()
       );
       create index if not exists tracking_events_deal_idx on tracking_events(deal_id);
+
+      create table if not exists buyer_liabilities (
+        id serial primary key,
+        deal_id int references deals(id),
+        phone text not null,
+        amount int not null,
+        reason text not null default '',
+        status text not null default 'open',
+        created_at timestamptz not null default now(),
+        cleared_at timestamptz
+      );
+      create index if not exists buyer_liabilities_phone_idx on buyer_liabilities(phone);
+
+      create table if not exists seller_liabilities (
+        id serial primary key,
+        seller_id int not null references users(id),
+        deal_id int references deals(id),
+        amount int not null,
+        reason text not null default '',
+        status text not null default 'open',
+        created_at timestamptz not null default now(),
+        netted_payout_id int
+      );
+      create index if not exists seller_liabilities_seller_idx on seller_liabilities(seller_id);
+
+      create table if not exists deal_installments (
+        id serial primary key,
+        deal_id int not null references deals(id),
+        seq int not null,
+        amount int not null,
+        due_at timestamptz not null,
+        status text not null default 'pending',
+        trx_id text not null default '',
+        sender_phone text not null default '',
+        payment_method text not null default 'bKash',
+        submitted_at timestamptz,
+        confirmed_at timestamptz,
+        created_at timestamptz not null default now()
+      );
+      create index if not exists deal_installments_deal_idx on deal_installments(deal_id);
+
+      create table if not exists dispute_evidence (
+        id serial primary key,
+        deal_id int not null references deals(id),
+        role text not null,
+        kind text not null,
+        photo bytea,
+        mime text not null default 'image/jpeg',
+        sha256 text not null,
+        created_at timestamptz not null default now()
+      );
+      create index if not exists dispute_evidence_deal_idx on dispute_evidence(deal_id);
+      create index if not exists dispute_evidence_sha_idx on dispute_evidence(sha256);
     `);
   }
 
@@ -705,6 +816,14 @@ async function runMigrations() {
         ["return_seller_paid_at", "text"],
         ["return_buyer_trx_id", "text not null default ''"],
         ["return_buyer_paid_at", "text"],
+        ["held_amount", "int not null default 0"],
+        ["trusted_discount_percent", "int not null default 0"],
+        ["trusted_discount_applied", "int not null default 0"],
+        ["is_buyer_trusted", "int not null default 0"],
+        ["mismatch_status", "text not null default 'none'"],
+        ["seller_response_deadline", "text"],
+        ["claim_reason", "text not null default ''"],
+        ["decision_record", "text not null default ''"],
       ];
       for (const [col, colType] of neededDealCols) {
         if (!dealCols.includes(col)) {
@@ -726,6 +845,59 @@ async function runMigrations() {
           created_at text not null default (datetime('now'))
         );
         create index if not exists tracking_events_deal_idx on tracking_events(deal_id);
+
+        create table if not exists buyer_liabilities (
+          id integer primary key autoincrement,
+          deal_id int,
+          phone text not null,
+          amount int not null,
+          reason text not null default '',
+          status text not null default 'open',
+          created_at text not null default (datetime('now')),
+          cleared_at text
+        );
+        create index if not exists buyer_liabilities_phone_idx on buyer_liabilities(phone);
+
+        create table if not exists seller_liabilities (
+          id integer primary key autoincrement,
+          seller_id int not null,
+          deal_id int,
+          amount int not null,
+          reason text not null default '',
+          status text not null default 'open',
+          created_at text not null default (datetime('now')),
+          netted_payout_id int
+        );
+        create index if not exists seller_liabilities_seller_idx on seller_liabilities(seller_id);
+
+        create table if not exists deal_installments (
+          id integer primary key autoincrement,
+          deal_id int not null,
+          seq int not null,
+          amount int not null,
+          due_at text not null,
+          status text not null default 'pending',
+          trx_id text not null default '',
+          sender_phone text not null default '',
+          payment_method text not null default 'bKash',
+          submitted_at text,
+          confirmed_at text,
+          created_at text not null default (datetime('now'))
+        );
+        create index if not exists deal_installments_deal_idx on deal_installments(deal_id);
+
+        create table if not exists dispute_evidence (
+          id integer primary key autoincrement,
+          deal_id int not null,
+          role text not null,
+          kind text not null,
+          photo blob,
+          mime text not null default 'image/jpeg',
+          sha256 text not null,
+          created_at text not null default (datetime('now'))
+        );
+        create index if not exists dispute_evidence_deal_idx on dispute_evidence(deal_id);
+        create index if not exists dispute_evidence_sha_idx on dispute_evidence(sha256);
       `);
 
       const eventCols = db.prepare("pragma table_info(deal_events)").all().map(c => c.name);
@@ -891,6 +1063,14 @@ async function runMigrations() {
         ["return_seller_paid_at", "timestamptz"],
         ["return_buyer_trx_id", "text not null default ''"],
         ["return_buyer_paid_at", "timestamptz"],
+        ["held_amount", "int not null default 0"],
+        ["trusted_discount_percent", "int not null default 0"],
+        ["trusted_discount_applied", "int not null default 0"],
+        ["is_buyer_trusted", "int not null default 0"],
+        ["mismatch_status", "text not null default 'none'"],
+        ["seller_response_deadline", "timestamptz"],
+        ["claim_reason", "text not null default ''"],
+        ["decision_record", "text not null default ''"],
       ];
       for (const [col, colType] of neededDealCols) {
         await pgPool.query(`alter table deals add column if not exists ${col} ${colType}`);
@@ -914,6 +1094,59 @@ async function runMigrations() {
           created_at timestamptz not null default now()
         );
         create index if not exists tracking_events_deal_idx on tracking_events(deal_id);
+
+        create table if not exists buyer_liabilities (
+          id serial primary key,
+          deal_id int references deals(id),
+          phone text not null,
+          amount int not null,
+          reason text not null default '',
+          status text not null default 'open',
+          created_at timestamptz not null default now(),
+          cleared_at timestamptz
+        );
+        create index if not exists buyer_liabilities_phone_idx on buyer_liabilities(phone);
+
+        create table if not exists seller_liabilities (
+          id serial primary key,
+          seller_id int not null references users(id),
+          deal_id int references deals(id),
+          amount int not null,
+          reason text not null default '',
+          status text not null default 'open',
+          created_at timestamptz not null default now(),
+          netted_payout_id int
+        );
+        create index if not exists seller_liabilities_seller_idx on seller_liabilities(seller_id);
+
+        create table if not exists deal_installments (
+          id serial primary key,
+          deal_id int not null references deals(id),
+          seq int not null,
+          amount int not null,
+          due_at timestamptz not null,
+          status text not null default 'pending',
+          trx_id text not null default '',
+          sender_phone text not null default '',
+          payment_method text not null default 'bKash',
+          submitted_at timestamptz,
+          confirmed_at timestamptz,
+          created_at timestamptz not null default now()
+        );
+        create index if not exists deal_installments_deal_idx on deal_installments(deal_id);
+
+        create table if not exists dispute_evidence (
+          id serial primary key,
+          deal_id int not null references deals(id),
+          role text not null,
+          kind text not null,
+          photo bytea,
+          mime text not null default 'image/jpeg',
+          sha256 text not null,
+          created_at timestamptz not null default now()
+        );
+        create index if not exists dispute_evidence_deal_idx on dispute_evidence(deal_id);
+        create index if not exists dispute_evidence_sha_idx on dispute_evidence(sha256);
       `);
 
       const neededEventCols = [

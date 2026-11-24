@@ -5,8 +5,9 @@ import { config } from "../config.js";
 import { computeAmounts } from "./amounts.js";
 
 export const VALID_TRANSITIONS = {
-  created: ["payment_pending", "held", "cancelled"],
-  payment_pending: ["held", "cancelled", "created"],
+  created: ["payment_pending", "partially_funded", "held", "cancelled"],
+  payment_pending: ["partially_funded", "held", "cancelled", "created"],
+  partially_funded: ["partially_funded", "held", "shipped", "cancelled", "refunded"],
   held: ["shipped", "cancelled", "refunded", "disputed"],
   shipped: ["in_transit", "delivered", "refused", "returned", "disputed"],
   in_transit: ["delivered", "refused", "returned", "disputed"],
@@ -44,6 +45,9 @@ export async function getPublicSettings() {
     refusal_review_hours: "24",
     confirm_window_hours: String(config.confirmWithinHours || 72),
     ship_within_hours: String(config.shipWithinHours || 48),
+    trusted_max_discount_percent: "70",
+    allow_early_ship: "false",
+    seller_response_hours: "24",
     return_deduct_shipping: "true",
     escrow_bkash_merchant: "01711-000000",
     escrow_nagad_merchant: "01911-000000",
@@ -137,7 +141,15 @@ export async function applyPayment(deal, paymentOpts = "bKash") {
 
 /** Seller dispatches courier (Steadfast, Pathao, RedX, Paperfly or Other/Manual) */
 export async function applyShip(deal, courierArg, trackingArg, extraOpts = {}) {
-  assertTransition(deal.status, "shipped", "seller");
+  if (deal.status === "partially_funded") {
+    const allowEarly = (await getSetting("allow_early_ship", "false")) === "true";
+    const inst1 = await one("select status from deal_installments where deal_id=$1 and seq=1", [deal.id]);
+    if (!allowEarly || inst1?.status !== "confirmed") {
+      throw new Error("Deal is partially funded. Early dispatch requires allow_early_ship setting enabled and first installment confirmed.");
+    }
+  } else {
+    assertTransition(deal.status, "shipped", "seller");
+  }
 
   let courierName = "Steadfast";
   let trackingId = "";
@@ -417,6 +429,20 @@ export async function settleRefusalCompensation(deal, actor = "system") {
       });
     }
 
+    const shortfall = Math.max(0, deliveryAndReturn - heldAmount);
+    if (shortfall > 0) {
+      await q(
+        `insert into buyer_liabilities(deal_id, phone, amount, reason, status) values($1, $2, $3, $4, 'open')`,
+        [currentDeal.id, currentDeal.buyer_phone, shortfall, `Refusal shipping shortfall for deal #${currentDeal.code} with reduced deposit`]
+      );
+      await log(
+        currentDeal.id,
+        "liability_recorded",
+        `Shortfall of ${shortfall} BDT recorded as buyer liability due to doorstep refusal with reduced deposit.`,
+        { actor: "system" }
+      );
+    }
+
     await bumpBuyer(currentDeal.buyer_phone, "refused");
     await log(
       currentDeal.id,
@@ -490,12 +516,44 @@ export async function releaseToSeller(deal, outcome = "buyer_confirmed", actor =
       return one("select * from deals where id=$1", [deal.id]);
     }
 
-    await addLedger({
-      dealId: deal.id,
-      type: "payout_seller",
-      amount: payout,
-      notes: `Seller payout for deal #${deal.code}`,
-    });
+    let effectivePayout = payout;
+    try {
+      const openSellerLiabs = await q(
+        "select * from seller_liabilities where seller_id=$1 and status='open' order by id asc",
+        [deal.seller_id]
+      );
+      for (const liab of openSellerLiabs || []) {
+        if (effectivePayout <= 0) break;
+        const netAmount = Math.min(effectivePayout, liab.amount);
+        effectivePayout -= netAmount;
+        if (netAmount === liab.amount) {
+          await q("update seller_liabilities set status='settled', netted_payout_id=$1 where id=$2", [deal.id, liab.id]);
+        } else {
+          await q("update seller_liabilities set amount=$1 where id=$2", [liab.amount - netAmount, liab.id]);
+        }
+        await addLedger({
+          dealId: deal.id,
+          type: "liability_netted",
+          amount: netAmount,
+          notes: `Netted ${netAmount} BDT seller liability (#${liab.id}) from deal #${deal.code} payout`,
+        });
+        await log(
+          deal.id,
+          "liability_netted",
+          `Deducted ${netAmount} BDT from payout to settle previous liability from deal #${liab.deal_id || "N/A"}.`,
+          { actor: "system" }
+        );
+      }
+    } catch (_liabErr) {}
+
+    if (effectivePayout > 0) {
+      await addLedger({
+        dealId: deal.id,
+        type: "payout_seller",
+        amount: effectivePayout,
+        notes: `Seller payout for deal #${deal.code}${effectivePayout < payout ? ` (netted from ${payout} BDT)` : ""}`,
+      });
+    }
 
     await addLedger({
       dealId: deal.id,
@@ -983,6 +1041,93 @@ export async function checkAllTimeouts() {
         console.log(`[REFUSAL-REVIEW TIMER] Refusal review window expired for deal #${deal.code}. Settling seller compensation.`);
         await settleRefusalCompensation(deal, "system");
       }
+    }
+
+    // 4. Challenge 1B: Expired installments check
+    try {
+      const expiredInsts = await q(
+        `select i.*, d.code, d.status as deal_status, d.buyer_phone, d.seller_id
+         from deal_installments i
+         join deals d on d.id = i.deal_id
+         where i.status in ('pending', 'submitted')
+           and i.due_at < $1`,
+        [now]
+      );
+      for (const inst of expiredInsts || []) {
+        await transaction(async () => {
+          await q("update deal_installments set status='expired' where id=$1", [inst.id]);
+
+          if (["created", "payment_pending", "partially_funded", "held"].includes(inst.deal_status)) {
+            // Before shipping: cancel deal and refund confirmed installments
+            const sumRow = await one(
+              "select coalesce(sum(amount), 0) as s from deal_installments where deal_id=$1 and status='confirmed'",
+              [inst.deal_id]
+            );
+            const confirmedSum = Number(sumRow?.s || 0);
+
+            await q(
+              `update deals set status='cancelled', outcome='installment_expired', updated_at=CURRENT_TIMESTAMP
+               where id=$1 and status in ('created', 'payment_pending', 'partially_funded', 'held')`,
+              [inst.deal_id]
+            );
+
+            if (confirmedSum > 0) {
+              await addLedger({
+                dealId: inst.deal_id,
+                type: "refund_buyer",
+                amount: confirmedSum,
+                partyPhone: inst.buyer_phone,
+                notes: `Refund for cancelled deal #${inst.code} after installment #${inst.seq} expired before shipping`,
+              });
+            }
+            await log(
+              inst.deal_id,
+              "cancelled",
+              `Installment #${inst.seq} expired before shipping. Deal cancelled and ${confirmedSum} BDT confirmed funds refunded to buyer.`,
+              { actor: "system" }
+            );
+            await notify(
+              inst.buyer_phone,
+              `PakkaDeal #${inst.code}: Deal cancelled because installment #${inst.seq} expired before shipping. Refund of ${confirmedSum} BDT processed.`,
+              "Installment Expired – Deal Cancelled",
+              inst.code
+            );
+            await notifySeller(
+              inst.seller_id,
+              `PakkaDeal #${inst.code}: Deal cancelled because buyer missed installment deadline before shipping.`,
+              "Deal Cancelled",
+              inst.code
+            );
+          } else if (["shipped", "in_transit", "delivered", "refused"].includes(inst.deal_status)) {
+            // After shipping: create buyer liability and penalize trust
+            await q(
+              `insert into buyer_liabilities(deal_id, phone, amount, reason, status)
+               values($1, $2, $3, $4, 'open')`,
+              [
+                inst.deal_id,
+                inst.buyer_phone,
+                inst.amount,
+                `Unpaid installment #${inst.seq} after parcel shipped for deal #${inst.code}`,
+              ]
+            );
+            await bumpBuyer(inst.buyer_phone, "refused");
+            await log(
+              inst.deal_id,
+              "liability_recorded",
+              `Installment #${inst.seq} (${inst.amount} BDT) expired after shipping. Recorded as buyer liability.`,
+              { actor: "system" }
+            );
+            await notify(
+              inst.buyer_phone,
+              `PakkaDeal #${inst.code}: Installment #${inst.seq} (${inst.amount} BDT) expired after shipping. Saved as an outstanding liability on your account.`,
+              "Outstanding Liability Recorded",
+              inst.code
+            );
+          }
+        });
+      }
+    } catch (_instErr) {
+      console.warn("Installment timeout check warning:", _instErr.message);
     }
   } finally {
     isCheckingTimeouts = false;

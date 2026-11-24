@@ -60,6 +60,7 @@ export type Deal = {
   status:
     | "created"
     | "payment_pending"
+    | "partially_funded"
     | "held"
     | "shipped"
     | "in_transit"
@@ -115,6 +116,15 @@ export type Deal = {
   auto_release_at?: string | null;
   auto_release_paused?: number;
   has_unboxing_photo?: boolean;
+  trusted_discount_percent?: number;
+  trusted_discount_applied?: number;
+  is_buyer_trusted?: number;
+  trusted?: boolean;
+  trusted_reasons?: string[];
+  mismatch_status?: string;
+  seller_response_deadline?: string | null;
+  claim_reason?: string;
+  decision_record?: any;
   created_at: string;
   updated_at: string;
   page_name?: string;
@@ -174,7 +184,29 @@ export type DealDetailResponse = {
     trust_score: number;
     delivered: number;
     refused: number;
+    trusted?: boolean;
+    reasons?: string[];
   };
+  installments?: Array<{
+    id: number;
+    seq: number;
+    amount: number;
+    due_at: string;
+    status: string;
+    trx_id?: string;
+    sender_phone?: string;
+    payment_method?: string;
+    submitted_at?: string;
+    confirmed_at?: string;
+  }>;
+  evidence?: Array<{
+    id: number;
+    role: string;
+    kind: string;
+    mime: string;
+    sha256: string;
+    created_at: string;
+  }>;
   events: Array<{
     id: number;
     kind: string;

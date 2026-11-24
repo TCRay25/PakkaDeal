@@ -114,6 +114,23 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
   // Form states - Confirm Receipt
   const [unboxingPhoto, setUnboxingPhoto] = useState<File | null>(null);
 
+  // Form states - Shipping & Pre-dispatch Photo
+  const [preDispatchPhoto, setPreDispatchPhoto] = useState<File | null>(null);
+
+  // Form states - Flexible Deposit Installments
+  const [payingInstallmentSeq, setPayingInstallmentSeq] = useState<number | null>(null);
+  const [selectingPlan, setSelectingPlan] = useState(false);
+
+  // Form states - Wrong Item Mismatch Claim
+  const [showMismatchModal, setShowMismatchModal] = useState(false);
+  const [mismatchReason, setMismatchReason] = useState("");
+  const [parcelLabelPhoto, setParcelLabelPhoto] = useState<File | null>(null);
+  const [unboxingItemPhoto, setUnboxingItemPhoto] = useState<File | null>(null);
+
+  // Form states - Seller Mismatch Rebuttal
+  const [sellerRebuttalText, setSellerRebuttalText] = useState("");
+  const [sellerRebuttalPhoto, setSellerRebuttalPhoto] = useState<File | null>(null);
+
   // Form states - Return & Dispute
   const [returnCourierName, setReturnCourierName] = useState("Pathao");
   const [returnTrackingId, setReturnTrackingId] = useState("");
@@ -171,6 +188,10 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
   const deal = data?.deal;
   const isDelivered = deal?.status === "delivered";
   const countdown = useCountdown(deal?.auto_release_at || deal?.confirm_by, !!deal?.auto_release_paused);
+  const sellerResponseCountdown = useCountdown(
+    deal?.seller_response_deadline,
+    deal?.mismatch_status !== "pending_seller_response"
+  );
 
   if (loading) {
     return (
@@ -212,6 +233,18 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
     }
   };
 
+  const handleSelectInstallmentPlan = async (count: number) => {
+    setSelectingPlan(true);
+    try {
+      await post(`/deals/${deal.code}/installment-plan`, { count });
+      load();
+    } catch (x: any) {
+      alert(x.message || "Failed to set installment plan");
+    } finally {
+      setSelectingPlan(false);
+    }
+  };
+
   const handlePay = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (me?.is_seller) {
@@ -233,16 +266,25 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
     }
     setSubmitting(true);
     try {
-      const res: any = await post(`/deals/${deal.code}/pay`, {
-        payment_method: payMethod,
-        sender_number: effectiveSender,
-        trx_id: trxId.trim(),
-        amount: Number(payAmount) || deal.total_amount,
-      });
-      if (res?.token) {
-        localStorage.setItem("token", res.token);
+      if (payingInstallmentSeq) {
+        await post(`/deals/${deal.code}/installments/${payingInstallmentSeq}/pay`, {
+          payment_method: payMethod,
+          sender_phone: effectiveSender,
+          trx_id: trxId.trim(),
+        });
+      } else {
+        const res: any = await post(`/deals/${deal.code}/pay`, {
+          payment_method: payMethod,
+          sender_number: effectiveSender,
+          trx_id: trxId.trim(),
+          amount: Number(payAmount) || deal.total_amount,
+        });
+        if (res?.token) {
+          localStorage.setItem("token", res.token);
+        }
       }
       setShowPayModal(false);
+      setPayingInstallmentSeq(null);
       load();
     } catch (x: any) {
       alert(x.message || "Failed to process escrow deposit");
@@ -303,12 +345,68 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
       formData.append("courier_phone", courierPhone.trim());
       formData.append("is_manual_courier", isManual ? "1" : "0");
       if (consignmentSlip) formData.append("consignment_slip", consignmentSlip);
+      if (preDispatchPhoto) formData.append("pre_dispatch_photo", preDispatchPhoto);
 
       await post(`/deals/${deal.code}/ship`, formData);
       setShowShipModal(false);
       load();
     } catch (x: any) {
       alert(x.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSubmitMismatchClaim = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!parcelLabelPhoto) {
+      alert(lang === "bn" ? "পার্সেল লেবেল ছবি আপলোড করুন" : "Please upload the shipping parcel label photo");
+      return;
+    }
+    if (!unboxingItemPhoto) {
+      alert(lang === "bn" ? "প্রাপ্ত পণ্যের আনবক্সিং ছবি আপলোড করুন" : "Please upload the photo of the delivered item");
+      return;
+    }
+    if (mismatchReason.trim().length < 5) {
+      alert(lang === "bn" ? "পণ্য অমিলের স্পষ্ট বিবরণ লিখুন" : "Please enter a clear explanation for the mismatch");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const formData = new FormData();
+      formData.append("parcel_label", parcelLabelPhoto);
+      formData.append("unboxing_item", unboxingItemPhoto);
+      formData.append("reason", mismatchReason.trim());
+
+      await post(`/deals/${deal.code}/claim-mismatch`, formData);
+      setShowMismatchModal(false);
+      load();
+    } catch (x: any) {
+      alert(x.message || "Failed to submit mismatch claim");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSellerRebuttal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (sellerRebuttalText.trim().length < 3) {
+      alert(lang === "bn" ? "উত্তরের বিবরণ লিখুন" : "Please provide response explanation");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const formData = new FormData();
+      formData.append("reply_text", sellerRebuttalText.trim());
+      if (sellerRebuttalPhoto) {
+        formData.append("reply_photo", sellerRebuttalPhoto);
+      }
+      await post(`/deals/${deal.code}/seller-mismatch-response`, formData);
+      setSellerRebuttalText("");
+      setSellerRebuttalPhoto(null);
+      load();
+    } catch (x: any) {
+      alert(x.message || "Failed to submit response");
     } finally {
       setSubmitting(false);
     }
@@ -562,8 +660,8 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
               </div>
             )}
 
-            {/* State: created or payment_pending */}
-            {(deal.status === "created" || deal.status === "payment_pending") && (
+            {/* State: created, payment_pending or partially_funded */}
+            {(deal.status === "created" || deal.status === "payment_pending" || deal.status === "partially_funded") && (
               <div className="space-y-4">
                 {me.is_seller ? (
                   /* SELLER VIEW: Waiting for Buyer to Pay, Share Link, Cannot Pay Own Deal */
@@ -796,6 +894,142 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                       </div>
                     )}
 
+                    {/* Flexible Deposit Plan Card (1, 2, or 3 Instalments) */}
+                    <div className="p-4 bg-white dark:bg-neutral-900 border-2 border-accent/30 space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-neutral-200 dark:border-neutral-800 pb-2">
+                        <div>
+                          <span className="text-xs font-bold uppercase tracking-wider text-accent flex items-center gap-1.5">
+                            📅 {t("depositPlan")}
+                          </span>
+                          <p className="text-[11px] text-neutral-500">
+                            {t("depositPlanSub")}
+                          </p>
+                        </div>
+                        {deal.status === "partially_funded" && (
+                          <span className="text-[11px] font-bold px-2 py-0.5 bg-amber-500 text-white uppercase tracking-wider">
+                            {t("partiallyFunded")}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* If no installments yet or still pending/created, buyer can pick plan */}
+                      {(!data.installments || data.installments.length === 0 || deal.status === "created") && (
+                        <div className="space-y-2">
+                          <label className="text-[11px] font-semibold text-neutral-600 dark:text-neutral-400">
+                            {lang === "bn" ? "কিস্তির সংখ্যা নির্বাচন করুন:" : "Select payment schedule:"}
+                          </label>
+                          <div className="grid grid-cols-3 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleSelectInstallmentPlan(1)}
+                              disabled={selectingPlan}
+                              className={`py-2 px-2 text-xs font-bold border transition-colors ${
+                                !data.installments || data.installments.length <= 1
+                                  ? "border-accent bg-accent/10 text-accent font-extrabold"
+                                  : "border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:border-neutral-400"
+                              }`}
+                            >
+                              {t("payFull")}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSelectInstallmentPlan(2)}
+                              disabled={selectingPlan}
+                              className={`py-2 px-2 text-xs font-bold border transition-colors ${
+                                data.installments?.length === 2
+                                  ? "border-accent bg-accent/10 text-accent font-extrabold"
+                                  : "border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:border-neutral-400"
+                              }`}
+                            >
+                              {t("pay2Instalments")}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSelectInstallmentPlan(3)}
+                              disabled={selectingPlan}
+                              className={`py-2 px-2 text-xs font-bold border transition-colors ${
+                                data.installments?.length === 3
+                                  ? "border-accent bg-accent/10 text-accent font-extrabold"
+                                  : "border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 hover:border-neutral-400"
+                              }`}
+                            >
+                              {t("pay3Instalments")}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Display Installment Schedule if present */}
+                      {data.installments && data.installments.length > 0 && (
+                        <div className="space-y-2 pt-1">
+                          <div className="divide-y divide-neutral-200 dark:divide-neutral-800 border border-neutral-200 dark:border-neutral-800">
+                            {data.installments.map((inst) => {
+                              return (
+                                <div key={inst.id} className="p-2.5 flex items-center justify-between text-xs gap-2">
+                                  <div className="space-y-0.5">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-bold font-mono">
+                                        {t("instalmentSeq")} #{inst.seq}
+                                      </span>
+                                      <span className={`px-1.5 py-0.2 text-[10px] font-bold uppercase border ${
+                                        inst.status === "confirmed"
+                                          ? "border-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300"
+                                          : inst.status === "submitted"
+                                          ? "border-amber-500 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300"
+                                          : inst.status === "expired"
+                                          ? "border-rose-500 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300"
+                                          : "border-neutral-400 text-neutral-600 dark:text-neutral-400"
+                                      }`}>
+                                        {inst.status}
+                                      </span>
+                                    </div>
+                                    <div className="text-[10px] text-neutral-500">
+                                      {t("dueBefore")}: {new Date(inst.due_at).toLocaleDateString(lang === "bn" ? "bn-BD" : "en-GB", {
+                                        month: "short",
+                                        day: "numeric",
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      })}
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-3">
+                                    <span className="font-mono font-bold text-sm text-neutral-900 dark:text-neutral-100">
+                                      {inst.amount.toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
+                                    </span>
+                                    {inst.status === "pending" && !me.is_seller && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setPayingInstallmentSeq(inst.seq);
+                                          setPayAmount(String(inst.amount));
+                                          setSenderPhone(user?.phone || deal.buyer_phone);
+                                          setShowPayModal(true);
+                                        }}
+                                        className="btn text-[11px] py-1 px-2.5 font-bold"
+                                      >
+                                        💳 {lang === "bn" ? "পরিশোধ" : "Pay"}
+                                      </button>
+                                    )}
+                                    {inst.status === "submitted" && (
+                                      <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold">
+                                        ⏳ {lang === "bn" ? "যাচাই চলছে" : "Verifying"}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <p className="text-[10px] text-neutral-500 italic">
+                            {lang === "bn"
+                              ? "* প্রথম কিস্তির সাথে প্ল্যাটফর্ম ফি অন্তর্ভুক্ত। সব কিস্তি নিশ্চিত হলে বিক্রেতাকে পার্সেল পাঠানোর নির্দেশনা দেওয়া হবে।"
+                              : "* First instalment includes platform fee. Full deposit or early-ship policy unlocks seller shipping."}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
                     {/* Plain Words Refusal Rule Notice */}
                     <div className="p-3 border border-amber-500/40 bg-amber-500/10 text-xs text-amber-900 dark:text-amber-200 space-y-1">
                       <span className="font-bold flex items-center gap-1.5">
@@ -941,6 +1175,140 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                   deal={deal}
                   onViewSlip={() => setPreviewImage(`${API}/deals/${deal.code}/consignment-slip`)}
                 />
+
+                {/* Mismatch Claim Card when active */}
+                {deal.mismatch_status && deal.mismatch_status !== "none" && (
+                  <div className="p-4 border-2 border-rose-500/60 bg-rose-500/10 dark:bg-rose-950/20 space-y-3">
+                    <div className="flex items-center justify-between border-b border-rose-500/30 pb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 bg-rose-500 animate-pulse" />
+                        <span className="text-xs font-extrabold uppercase tracking-wider text-rose-700 dark:text-rose-300">
+                          {t("claimMismatchTitle")}
+                        </span>
+                      </div>
+                      <span className="text-xs font-mono font-bold uppercase px-2 py-0.5 border border-rose-500 text-rose-700 dark:text-rose-300">
+                        {deal.mismatch_status}
+                      </span>
+                    </div>
+
+                    <div className="text-xs text-neutral-800 dark:text-neutral-200">
+                      <strong>{lang === "bn" ? "ক্রেতার অভিযোগ:" : "Buyer Claim:"}</strong> {deal.claim_reason}
+                    </div>
+
+                    {/* Seller Response Countdown */}
+                    {sellerResponseCountdown && !sellerResponseCountdown.expired ? (
+                      <div className="p-3 bg-amber-500/10 border border-amber-500/40 text-xs space-y-1">
+                        <span className="font-bold text-amber-800 dark:text-amber-200 block uppercase tracking-wider">
+                          ⏳ {t("sellerResponseCountdown")}:
+                        </span>
+                        <div className="font-mono text-xl font-extrabold text-neutral-900 dark:text-neutral-100">
+                          {String(sellerResponseCountdown.hours).padStart(2, "0")}h : {String(sellerResponseCountdown.minutes).padStart(2, "0")}m : {String(sellerResponseCountdown.seconds).padStart(2, "0")}s
+                        </div>
+                        <p className="text-[11px] text-neutral-600 dark:text-neutral-400">
+                          {lang === "bn"
+                            ? "এই সময়ের মধ্যে বিক্রেতা উত্তর না দিলে বা প্রমাণ সন্তোষজনক না হলে স্বয়ংক্রিয়ভাবে সিদ্ধান্ত গৃহীত হবে।"
+                            : "Awaiting seller response. If response is not received or inconclusive, rule-based settlement applies."}
+                        </p>
+                      </div>
+                    ) : deal.mismatch_status === "pending_seller_response" ? (
+                      <div className="p-2 border border-rose-500/40 bg-rose-500/10 text-xs text-rose-700 dark:text-rose-300">
+                        {lang === "bn" ? "বিক্রেতার উত্তরের সময়সীমা উত্তীর্ণ হয়েছে।" : "Seller response window has expired."}
+                      </div>
+                    ) : null}
+
+                    {/* Seller Rebuttal Form */}
+                    {me.is_seller && deal.mismatch_status === "pending_seller_response" && (
+                      <form onSubmit={handleSellerRebuttal} className="p-3 bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 space-y-2">
+                        <span className="text-xs font-bold uppercase tracking-wider block text-accent">
+                          {lang === "bn" ? "বিক্রেতার বক্তব্য দাখিল করুন" : "Submit Seller Rebuttal"}
+                        </span>
+                        <textarea
+                          rows={2}
+                          required
+                          value={sellerRebuttalText}
+                          onChange={(e) => setSellerRebuttalText(e.target.value)}
+                          placeholder={lang === "bn" ? "আপনার বক্তব্য ও পণ্য প্যাকেজিং বিবরণ লিখুন..." : "Explain package details and response to buyer claim..."}
+                          className="text-xs"
+                        />
+                        <div>
+                          <label className="text-[11px] font-semibold block text-neutral-600 dark:text-neutral-400">
+                            {lang === "bn" ? "পাল্টা ছবি প্রমাণ (ঐচ্ছিক):" : "Counter Evidence Photo (Optional):"}
+                          </label>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => setSellerRebuttalPhoto(e.target.files?.[0] || null)}
+                            className="text-xs"
+                          />
+                        </div>
+                        <button type="submit" disabled={submitting} className="btn text-xs py-1.5 px-3">
+                          {submitting ? t("processing") : (lang === "bn" ? "জবাব সাবমিট করুন" : "Submit Rebuttal")}
+                        </button>
+                      </form>
+                    )}
+
+                    {/* Explainable Decision Record & AI Verification */}
+                    {deal.decision_record && (
+                      <div className="p-3 bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 text-xs space-y-2">
+                        <div className="flex items-center justify-between border-b border-neutral-200 dark:border-neutral-800 pb-1.5">
+                          <span className="font-bold uppercase tracking-wider text-accent flex items-center gap-1.5">
+                            🤖 {t("aiAnalysis")}
+                          </span>
+                          <span className="font-mono font-bold uppercase px-2 py-0.5 border border-accent">
+                            {deal.decision_record.rule_outcome || deal.mismatch_status}
+                          </span>
+                        </div>
+                        {deal.decision_record.ai_decision && (
+                          <div className="space-y-1">
+                            <div className="flex gap-4">
+                              <span>Match: <strong>{deal.decision_record.ai_decision.match}</strong></span>
+                              <span>Confidence: <strong>{deal.decision_record.ai_decision.confidence}%</strong></span>
+                            </div>
+                            {deal.decision_record.ai_decision.differences?.length > 0 && (
+                              <div>
+                                <span className="font-semibold block text-neutral-500">Differences:</span>
+                                <ul className="list-disc pl-4 space-y-0.5 text-neutral-600 dark:text-neutral-400">
+                                  {deal.decision_record.ai_decision.differences.map((d: string, i: number) => (
+                                    <li key={i}>{d}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {deal.decision_record.rule_used && (
+                          <div className="text-[11px] text-neutral-500 pt-1 border-t border-neutral-200 dark:border-neutral-800">
+                            Rule Applied: <span className="font-mono">{deal.decision_record.rule_used}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Dispute Evidence Photos Gallery */}
+                    {data.evidence && data.evidence.length > 0 && (
+                      <div className="space-y-1.5 pt-1">
+                        <span className="text-[11px] uppercase font-bold text-neutral-500 block">
+                          {lang === "bn" ? "সংযুক্ত প্রমাণসমূহ:" : "Dispute Evidence Photos:"}
+                        </span>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {data.evidence.map((ev) => (
+                            <div key={ev.id} className="p-2 border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-black text-center space-y-1">
+                              <span className="text-[10px] font-mono uppercase block text-neutral-500 truncate">{ev.kind.replace("_", " ")}</span>
+                              <button
+                                type="button"
+                                onClick={() => setPreviewImage(`${API}/deals/${deal.code}/evidence/${ev.id}`)}
+                                className="btn-ghost text-[10px] py-1 px-2 w-full"
+                              >
+                                🔍 {lang === "bn" ? "ছবি দেখুন" : "View Photo"}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="flex flex-wrap gap-3">
                   {me.is_buyer && (
                     <>
@@ -950,6 +1318,15 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                       {deal.return_policy !== "no_returns" && (
                         <button onClick={handleRequestReturn} className="btn-ghost text-xs">
                           {t("requestReturn")}
+                        </button>
+                      )}
+                      {(!deal.mismatch_status || deal.mismatch_status === "none") && (
+                        <button
+                          onClick={() => setShowMismatchModal(true)}
+                          className="btn-danger text-xs py-2 px-3 flex items-center gap-1.5"
+                        >
+                          <span>⚠️</span>
+                          <span>{t("claimMismatchBtn")}</span>
                         </button>
                       )}
                     </>
@@ -1118,6 +1495,30 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
 
         {/* Sidebar Column */}
         <div className="lg:col-span-4 space-y-6">
+          {/* Trusted Buyer Badge */}
+          {(deal.trusted_discount_applied || (deal.is_buyer_trusted && (deal.trusted_discount_percent ?? 0) > 0)) && (
+            <div className="p-4 border-2 border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-200 space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-base">🛡️</span>
+                <span className="text-xs font-extrabold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                  {t("trustedBuyerBadge")}
+                </span>
+              </div>
+              <p className="text-xs leading-relaxed">
+                {lang === "bn"
+                  ? `বিশ্বস্ত ক্রেতা হিসেবে ${deal.trusted_discount_percent || 0}% ডিপোজিট ছাড় কার্যকর হয়েছে।`
+                  : `Special ${deal.trusted_discount_percent || 0}% reduced escrow deposit applied based on buyer trust history.`}
+              </p>
+              {buyer.reasons && buyer.reasons.length > 0 && (
+                <ul className="text-[11px] text-emerald-800 dark:text-emerald-300 list-disc pl-4 space-y-0.5 pt-1 border-t border-emerald-500/30">
+                  {buyer.reasons.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
           <MoneyBreakdown deal={deal} isSeller={me.is_seller} />
 
           {/* Counterparties Card */}
@@ -1186,13 +1587,22 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
             <div className="flex justify-between items-center border-b border-neutral-200 dark:border-neutral-800 pb-2">
               <div>
                 <h3 className="font-bold text-base text-neutral-900 dark:text-neutral-100">
-                  {t("officialEscrowDeposit")}
+                  {payingInstallmentSeq ? `${t("depositPlan")} – ${t("instalmentSeq")} #${payingInstallmentSeq}` : t("officialEscrowDeposit")}
                 </h3>
                 <span className="text-[11px] text-accent font-semibold block">
-                  {t("amountToLock")}: {deal.total_amount.toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
+                  {t("amountToLock")}: {(payingInstallmentSeq ? (data.installments?.find(i => i.seq === payingInstallmentSeq)?.amount || deal.total_amount) : deal.total_amount).toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
                 </span>
               </div>
-              <button type="button" onClick={() => setShowPayModal(false)} className="text-neutral-500 hover:text-black dark:hover:text-white">✕</button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPayModal(false);
+                  setPayingInstallmentSeq(null);
+                }}
+                className="text-neutral-500 hover:text-black dark:hover:text-white"
+              >
+                ✕
+              </button>
             </div>
 
             {/* Payment Method Selector */}
@@ -1338,7 +1748,14 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
             </div>
 
             <div className="flex gap-2 pt-1">
-              <button type="button" onClick={() => setShowPayModal(false)} className="btn-ghost w-1/3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPayModal(false);
+                  setPayingInstallmentSeq(null);
+                }}
+                className="btn-ghost w-1/3"
+              >
                 {t("cancel")}
               </button>
               <button type="submit" disabled={submitting} className="btn w-2/3">
@@ -1534,6 +1951,25 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
               </div>
             )}
 
+            {/* Pre-Dispatch Packaging Photo */}
+            <div className="space-y-1.5 p-3.5 border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900/50">
+              <label htmlFor="pre-dispatch-photo-input" className="text-xs font-bold uppercase text-neutral-700 dark:text-neutral-300">
+                📸 {lang === "bn" ? "প্রি-ডিসপ্যাচ পার্সেল ছবি (প্যাকেজিং প্রমাণ)" : "Pre-Dispatch Photo (Packaging Proof)"}
+              </label>
+              <input
+                id="pre-dispatch-photo-input"
+                type="file"
+                accept="image/*"
+                onChange={(e) => setPreDispatchPhoto(e.target.files?.[0] || null)}
+                className="text-xs"
+              />
+              <span className="text-[11px] text-neutral-500 block">
+                {lang === "bn"
+                  ? "কুরিয়ারে হস্তান্তরের আগে পার্সেল ও পণ্যের ছবি রাখুন যাতে ভুল বা ক্ষতিগ্রস্থ পণ্যের বিরোধে আপনার পক্ষে প্রমাণ থাকে।"
+                  : "Upload clear photo of the packed parcel/item before dispatch. Protects against mismatch claims."}
+              </span>
+            </div>
+
             <div className="flex gap-2 pt-2 border-t border-neutral-200 dark:border-neutral-800">
               <button
                 type="button"
@@ -1698,6 +2134,122 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
               <button type="button" onClick={() => setShowReturnModal(false)} className="btn-ghost w-1/3">{t("cancel")}</button>
               <button type="submit" disabled={submitting} className="btn w-2/3">
                 {submitting ? t("saving") : t("confirmReturnShipment")}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* MODAL: Report Wrong / Mismatched Item */}
+      {showMismatchModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <form onSubmit={handleSubmitMismatchClaim} className="box w-full max-w-lg p-6 border-2 border-rose-600 space-y-4 bg-white dark:bg-black max-h-[92vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-neutral-200 dark:border-neutral-800 pb-2">
+              <div>
+                <h3 className="font-bold text-base text-rose-600 flex items-center gap-2">
+                  <span>⚠️</span>
+                  <span>{t("claimMismatchTitle")}</span>
+                </h3>
+                <span className="text-[11px] text-neutral-500 block">{t("claimMismatchDesc")}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMismatchModal(false);
+                  setParcelLabelPhoto(null);
+                  setUnboxingItemPhoto(null);
+                  setMismatchReason("");
+                }}
+                className="text-neutral-500 hover:text-black dark:hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Parcel Shipping Label Photo */}
+            <div className="space-y-1">
+              <label htmlFor="mismatch-label-photo" className="text-xs font-bold uppercase tracking-wider text-neutral-700 dark:text-neutral-300">
+                📦 {t("parcelLabelPhoto")} *
+              </label>
+              <input
+                id="mismatch-label-photo"
+                type="file"
+                required
+                accept="image/*"
+                onChange={(e) => setParcelLabelPhoto(e.target.files?.[0] || null)}
+                className="text-xs"
+              />
+              <span className="text-[11px] text-neutral-500 block">
+                {lang === "bn"
+                  ? "কুরিয়ার পার্সেল বক্সের গায়ের মূল ট্র্যাকিং লেবেলের স্পষ্ট ছবি যাতে ট্র্যাকিং আইডি পড়া যায়।"
+                  : "Clear photo of the courier shipping label with readable tracking code on the outer parcel."}
+              </span>
+            </div>
+
+            {/* Unboxing Delivered Item Photo */}
+            <div className="space-y-1">
+              <label htmlFor="mismatch-item-photo" className="text-xs font-bold uppercase tracking-wider text-neutral-700 dark:text-neutral-300">
+                📸 {t("unboxingItemPhoto")} *
+              </label>
+              <input
+                id="mismatch-item-photo"
+                type="file"
+                required
+                accept="image/*"
+                onChange={(e) => setUnboxingItemPhoto(e.target.files?.[0] || null)}
+                className="text-xs"
+              />
+              <span className="text-[11px] text-neutral-500 block">
+                {lang === "bn"
+                  ? "বাক্স থেকে বের করা পণ্যটির ছবি, যা লিস্টিং ছবির চেয়ে আলাদা।"
+                  : "Clear photo showing the actual item received out of the box."}
+              </span>
+            </div>
+
+            {/* Reason Description */}
+            <div className="space-y-1">
+              <label htmlFor="mismatch-reason-input" className="text-xs font-bold uppercase tracking-wider text-neutral-700 dark:text-neutral-300">
+                📝 {t("claimReason")} *
+              </label>
+              <textarea
+                id="mismatch-reason-input"
+                required
+                rows={3}
+                value={mismatchReason}
+                onChange={(e) => setMismatchReason(e.target.value)}
+                placeholder={
+                  lang === "bn"
+                    ? "যেমন: বিজ্ঞাপনে নীল রঙের গ্যালাক্সি এস২৩ ছিল, কিন্তু বাক্সে একটি পুরোনো ভাঙা নোকিয়া ফোন পেয়েছি।"
+                    : "e.g. Ordered a blue Galaxy S23, but the box contained a completely different used Nokia handset."
+                }
+                className="text-xs"
+              />
+            </div>
+
+            <div className="p-3 bg-rose-50 dark:bg-rose-950/20 border border-rose-300 dark:border-rose-800 text-xs text-rose-800 dark:text-rose-200 space-y-1">
+              <strong>🔒 {lang === "bn" ? "অটো-রিলিজ ফ্রিজ নীতি" : "Escrow Freeze Policy"}:</strong>
+              <p>
+                {lang === "bn"
+                  ? "ক্লেইম সাবমিট হওয়ামাত্র স্বয়ংক্রিয় পেআউট স্থগিত করা হবে। বিক্রেতাকে ২৪ ঘণ্টার মধ্যে উত্তর দেওয়ার সুযোগ দেওয়া হবে এবং এআই প্রমাণ বিশ্লেষণের মাধ্যমে সঠিক সমাধান নিশ্চিত করা হবে।"
+                  : "Submitting this claim freezes the 24h auto-release. The seller gets 24 hours to respond. Multimodal AI will inspect images and evidence."}
+              </p>
+            </div>
+
+            <div className="flex gap-2 pt-2 border-t border-neutral-200 dark:border-neutral-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMismatchModal(false);
+                  setParcelLabelPhoto(null);
+                  setUnboxingItemPhoto(null);
+                  setMismatchReason("");
+                }}
+                className="btn-ghost w-1/3"
+              >
+                {t("cancel")}
+              </button>
+              <button type="submit" disabled={submitting} className="btn-danger w-2/3">
+                {submitting ? t("processing") : t("submit")}
               </button>
             </div>
           </form>

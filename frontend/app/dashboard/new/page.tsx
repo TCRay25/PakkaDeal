@@ -26,6 +26,8 @@ export default function CreateDealPage() {
   const [returnPolicy, setReturnPolicy] = useState<"buyer_pays" | "seller_pays" | "no_returns">("buyer_pays");
   const [returnCharge, setReturnCharge] = useState<number>(100);
   const [courierName, setCourierName] = useState("Steadfast");
+  const [trustedDiscountPercent, setTrustedDiscountPercent] = useState<number>(0);
+  const [listingPhotos, setListingPhotos] = useState<{ file: File; preview: string }[]>([]);
 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
@@ -39,12 +41,37 @@ export default function CreateDealPage() {
   const codAmount = isDeliveryOnly ? Number(price || 0) : 0;
   const sellerPayout = Number(price || 0) + charge;
 
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return;
+    const selected = Array.from(e.target.files).slice(0, 3 - listingPhotos.length);
+    const newItems = selected.map((file) => ({
+      file,
+      preview: URL.createObjectURL(file),
+    }));
+    setListingPhotos((prev) => [...prev, ...newItems].slice(0, 3));
+  };
+
+  const removePhoto = (idx: number) => {
+    setListingPhotos((prev) => prev.filter((_, i) => i !== idx));
+  };
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErr("");
     setLoading(true);
 
     try {
+      const base64Photos = await Promise.all(
+        listingPhotos.map(
+          (item) =>
+            new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.readAsDataURL(item.file);
+            })
+        )
+      );
+
       const res = await post("/deals", {
         deal_type: dealType,
         payment_mode: dealType === "product" ? paymentMode : "full_payment",
@@ -59,6 +86,8 @@ export default function CreateDealPage() {
         return_policy: returnPolicy,
         return_charge: returnCharge,
         courier_name: courierName,
+        trusted_discount_percent: isDeliveryOnly ? trustedDiscountPercent : 0,
+        listing_photos: base64Photos,
       });
 
       router.push(`/deal/${res.code}`);
@@ -298,6 +327,75 @@ export default function CreateDealPage() {
                     </p>
                   </div>
                 )}
+
+                {/* Challenge 1A: Offer reduced deposit to trusted buyers */}
+                {paymentMode === "delivery_only" && (
+                  <div className="p-3 border border-neutral-200 dark:border-neutral-800 bg-neutral-100/50 dark:bg-neutral-800/30 space-y-2">
+                    <div className="flex justify-between items-center text-xs">
+                      <label htmlFor="trusted-discount-slider" className="font-semibold text-neutral-800 dark:text-neutral-200 cursor-pointer">
+                        🛡️ {t("offerReducedDeposit")}
+                      </label>
+                      <span className="font-mono font-bold text-accent px-2 py-0.5 border border-accent/30 bg-accent/10">
+                        {trustedDiscountPercent}%
+                      </span>
+                    </div>
+                    <input
+                      id="trusted-discount-slider"
+                      type="range"
+                      min={0}
+                      max={70}
+                      step={5}
+                      value={trustedDiscountPercent}
+                      onChange={(e) => setTrustedDiscountPercent(Number(e.target.value) || 0)}
+                      className="w-full accent-accent cursor-pointer"
+                    />
+                    <p className="text-[11px] text-neutral-500">
+                      {t("trustedDiscountHelp")}
+                    </p>
+                  </div>
+                )}
+
+                {/* Challenge 2: Listing Evidence Photos (1-3 photos) */}
+                <div className="space-y-2 pt-2 border-t border-neutral-200 dark:border-neutral-800">
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-semibold text-neutral-800 dark:text-neutral-200">
+                      📷 {t("listingPhotos")}
+                    </label>
+                    <span className="text-[11px] text-neutral-500 font-mono">
+                      {listingPhotos.length}/3
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-500">
+                    {t("listingPhotosHelp")}
+                  </p>
+                  <div className="flex flex-wrap gap-2 items-center">
+                    {listingPhotos.map((item, idx) => (
+                      <div key={idx} className="relative w-16 h-16 border border-neutral-300 dark:border-neutral-700 overflow-hidden group">
+                        <img src={item.preview} alt={`Listing photo ${idx + 1}`} className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => removePhoto(idx)}
+                          className="absolute inset-0 bg-black/60 text-white font-bold opacity-0 group-hover:opacity-100 flex items-center justify-center text-xs transition"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                    {listingPhotos.length < 3 && (
+                      <label className="w-16 h-16 border-2 border-dashed border-neutral-300 dark:border-neutral-700 hover:border-accent flex flex-col items-center justify-center text-xs text-neutral-500 cursor-pointer transition">
+                        <span className="text-base leading-none">+</span>
+                        <span className="text-[9px]">Upload</span>
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          multiple
+                          onChange={handlePhotoUpload}
+                          className="hidden"
+                        />
+                      </label>
+                    )}
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
