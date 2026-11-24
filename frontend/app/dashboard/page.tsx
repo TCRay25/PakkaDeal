@@ -185,7 +185,7 @@ export default function Dashboard() {
                               {(deal.seller_payout || (deal.price + (deal.delivery_charge || 0))).toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
                             </div>
                             <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-sans font-normal block">
-                              {lang === "bn" ? "১০০% পাওনা (০% ফি)" : "100% Payout (0% fee)"}
+                              {lang === "bn" ? "নিট পাওনা" : "Net Payout"}
                             </span>
                           </div>
                         ) : (

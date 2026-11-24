@@ -33,7 +33,7 @@ export default function FeesPage() {
               : `Minimum fee: ${formatFeeMin("en")} per transaction`}
           </p>
           <ul className="text-sm space-y-2 text-neutral-600 dark:text-neutral-400 pt-3 border-t border-neutral-200 dark:border-neutral-800">
-            <li>{lang === "bn" ? "✓ বিক্রেতাদের জন্য সম্পূর্ণ ফ্রি (১০০% বিক্রয়মূল্য প্রাপ্তির নিশ্চয়তা)" : "✓ Free for sellers (100% payout guaranteed, 0% seller deduction)"}</li>
+            <li>{lang === "bn" ? "✓ বিক্রেতাদের পাওনা থেকে কোনো প্ল্যাটফর্ম ফি কর্তন হয় না" : "✓ Platform fee is paid by buyer into escrow (seller receives agreed price)"}</li>
             <li>{lang === "bn" ? "✓ ক্রেতার ১০০% সুরক্ষার জন্য চেকআউটের সময় নামমাত্র ফি যুক্ত হয়" : "✓ Nominal fee added at buyer checkout for 100% fraud protection"}</li>
             <li>{lang === "bn" ? "✓ স্বয়ংক্রিয় কুরিয়ার ট্র্যাকিং সুবিধা অন্তর্ভুক্ত" : "✓ Automated courier tracking included"}</li>
             <li>{lang === "bn" ? "✓ সম্পূর্ণ বিরোধ ও মধ্যস্থতা সেবা সুবিধা" : "✓ Full dispute mediation support"}</li>

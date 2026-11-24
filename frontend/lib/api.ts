@@ -38,6 +38,9 @@ export type Deal = {
   id: number;
   code: string;
   deal_type: "product" | "rental" | "service";
+  payment_mode?: "delivery_only" | "full_payment";
+  cod_amount?: number;
+  held_amount?: number;
   seller_id: number;
   buyer_phone: string;
   buyer_name: string;

@@ -2,6 +2,7 @@ import { one, q, transaction } from "../db.js";
 import { bumpBuyer, bumpSeller } from "./trust.js";
 import { log, notify, notifySeller } from "./events.js";
 import { config } from "../config.js";
+import { computeAmounts } from "./amounts.js";
 
 export const VALID_TRANSITIONS = {
   created: ["payment_pending", "held", "cancelled"],
@@ -13,7 +14,8 @@ export const VALID_TRANSITIONS = {
   return_requested: ["return_shipped", "disputed", "cancelled", "refunded"],
   return_shipped: ["return_received", "delivered", "returned", "refunded", "disputed"],
   return_received: ["refunded", "disputed"],
-  disputed: ["released", "refunded", "return_requested", "delivered", "held"],
+  disputed: ["released", "refunded", "return_requested", "delivered", "held", "refused"],
+  refused: ["released", "refunded", "disputed", "cancelled"],
   released: [],
   refunded: [],
   cancelled: [],
@@ -36,8 +38,10 @@ export async function getSetting(key, fallback) {
 export async function getPublicSettings() {
   const rows = await q("select key, value from settings");
   const map = {
-    platform_fee_percent: String(config.feePercent !== undefined ? config.feePercent : 1),
-    platform_fee_min: String(config.feeMin !== undefined ? config.feeMin : 10),
+    platform_fee_percent: "1",
+    platform_fee_min: "10",
+    min_delivery_deposit: "60",
+    refusal_review_hours: "24",
     confirm_window_hours: String(config.confirmWithinHours || 72),
     ship_within_hours: String(config.shipWithinHours || 48),
     return_deduct_shipping: "true",
@@ -55,10 +59,15 @@ export async function getPublicSettings() {
 }
 
 export async function calculateFee(amount) {
-  const feePercent = Number(await getSetting("platform_fee_percent", config.feePercent ?? 1));
-  const feeMin = Number(await getSetting("platform_fee_min", config.feeMin ?? 10));
-  const fee = Math.round((Number(amount || 0) * feePercent) / 100);
-  return Math.max(fee, feeMin);
+  const feePercent = Number(await getSetting("platform_fee_percent", 1));
+  const feeMin = Number(await getSetting("platform_fee_min", 10));
+  const { fee_amount } = computeAmounts({
+    dealType: "service",
+    price: amount,
+    feePercent,
+    feeMin,
+  });
+  return fee_amount;
 }
 
 /** Record ledger movement */
@@ -270,14 +279,14 @@ export async function applyCourier(deal, status) {
 
     await notify(
       deal.buyer_phone,
-      `PakkaDeal #${deal.code}: Delivered! Please inspect item and confirm receipt in your dashboard within 24 hours before automatic fund release.`,
-      "Parcel Delivered – 24h Review Window",
+      `PakkaDeal #${deal.code}: Delivered! Please inspect item and confirm receipt in your dashboard within ${autoReleaseHours} hours before automatic fund release.`,
+      `Parcel Delivered – ${autoReleaseHours}h Review Window`,
       deal.code
     );
 
     await notifySeller(
       deal.seller_id,
-      `PakkaDeal #${deal.code}: Courier confirmed delivery to buyer. 24-hour confirmation countdown is now active.`,
+      `PakkaDeal #${deal.code}: Courier confirmed delivery to buyer. ${autoReleaseHours}-hour confirmation countdown is now active.`,
       "Delivery Confirmed",
       deal.code
     );
@@ -286,76 +295,156 @@ export async function applyCourier(deal, status) {
   }
 
   if (status === "refused" || status === "returned") {
-    return await transaction(async () => {
-      // Buyer refused parcel at doorstep
-      const updated = await q(
-        `update deals set status='released', outcome='refused_at_door', courier_status='refused', updated_at=CURRENT_TIMESTAMP
-         where id=$1 and status in ('shipped', 'in_transit')
-         returning *`,
-        [deal.id]
-      );
+    if (deal.payment_mode === "delivery_only") {
+      const refusalHours = Number(await getSetting("refusal_review_hours", 24));
+      const refusalReviewUntil = new Date(Date.now() + refusalHours * 36e5).toISOString();
 
-      if (updated.length !== 1) {
-        return one("select * from deals where id=$1", [deal.id]);
-      }
+      return await transaction(async () => {
+        const updated = await q(
+          `update deals set
+             status='refused',
+             outcome='refused_at_door',
+             courier_status='refused',
+             confirm_by=$2,
+             auto_release_at=$2,
+             auto_release_paused=0,
+             updated_at=CURRENT_TIMESTAMP
+           where id=$1 and status in ('shipped', 'in_transit')
+           returning *`,
+          [deal.id, refusalReviewUntil]
+        );
 
-      const deliveryAndReturn = (deal.delivery_charge || 0) + (deal.return_charge || deal.delivery_charge || 0);
-      const buyerRefund = Math.max(0, deal.total_amount - deliveryAndReturn - deal.fee_amount);
+        if (updated.length !== 1) {
+          return one("select * from deals where id=$1", [deal.id]);
+        }
 
-      if (deliveryAndReturn > 0) {
-        await addLedger({
-          dealId: deal.id,
-          type: "payout_seller",
-          amount: deliveryAndReturn,
-          notes: `Delivery & return shipping compensation for refused order #${deal.code}`,
-        });
-      }
+        await log(
+          deal.id,
+          "refused",
+          `Buyer refused parcel at doorstep (delivery-only). ${refusalHours}-hour fair refusal review window started for buyer claim.`,
+          {
+            fromStatus: deal.status,
+            toStatus: "refused",
+            actor: "courier",
+          }
+        );
 
-      if (deal.fee_amount > 0) {
-        await addLedger({
-          dealId: deal.id,
-          type: "platform_fee",
-          amount: deal.fee_amount,
-          notes: `Platform service fee for #${deal.code}`,
-        });
-      }
+        await notify(
+          deal.buyer_phone,
+          `PakkaDeal #${deal.code}: Order refused at doorstep. If this was seller fault (wrong/damaged item), submit a claim with photo evidence within ${refusalHours} hours before shipping compensation is released.`,
+          `Order Refused – ${refusalHours}h Review Window`,
+          deal.code
+        );
 
-      if (buyerRefund > 0) {
-        await addLedger({
-          dealId: deal.id,
-          type: "refund_buyer",
-          amount: buyerRefund,
-          partyPhone: deal.buyer_phone,
-          notes: `Refund after delivery deductions for refused order #${deal.code}`,
-        });
-      }
+        await notifySeller(
+          deal.seller_id,
+          `PakkaDeal #${deal.code}: Order refused at doorstep. ${refusalHours}-hour review window started. Shipping compensation will be released if no seller fault claim is filed.`,
+          "Order Refused – Review Active",
+          deal.code
+        );
 
-      await bumpBuyer(deal.buyer_phone, "refused");
-      await log(deal.id, "refused", `Buyer refused parcel at doorstep. Shipping compensation released to seller, remaining balance refunded to buyer.`, {
-        fromStatus: deal.status,
-        toStatus: "released",
-        actor: "courier",
+        return updated[0];
       });
+    }
 
-      await notify(
-        deal.buyer_phone,
-        `PakkaDeal #${deal.code}: Order refused at doorstep. Refund of ${buyerRefund} BDT processed after delivery charges.`,
-        "Order Refused – Refund Processed",
-        deal.code
-      );
-
-      await notifySeller(
-        deal.seller_id,
-        `PakkaDeal #${deal.code}: Order refused at doorstep. Shipping charge compensation (${deliveryAndReturn} BDT) released to your account.`,
-        "Order Refused",
-        deal.code
-      );
-
-      return updated[0];
-    });
+    return await settleRefusalCompensation(deal, "courier");
   }
 
   return deal;
+}
+
+/** Settle refusal/return compensation to seller, platform fee, and remainder refund to buyer */
+export async function settleRefusalCompensation(deal, actor = "system") {
+  return await transaction(async () => {
+    const updated = await q(
+      `update deals set
+         status='released',
+         outcome='refused_at_door',
+         courier_status='refused',
+         auto_release_paused=1,
+         updated_at=CURRENT_TIMESTAMP
+       where id=$1 and status in ('shipped', 'in_transit', 'refused')
+       returning *`,
+      [deal.id]
+    );
+
+    if (updated.length !== 1) {
+      return one("select * from deals where id=$1", [deal.id]);
+    }
+
+    const currentDeal = updated[0];
+    const heldAmount = currentDeal.seller_payout !== undefined && currentDeal.seller_payout !== null && currentDeal.seller_payout > 0
+      ? currentDeal.seller_payout
+      : Math.max(0, currentDeal.total_amount - (currentDeal.fee_amount || 0));
+
+    const deliveryCharge = currentDeal.delivery_charge || 0;
+    const returnCharge = currentDeal.return_charge !== undefined && currentDeal.return_charge !== null
+      ? currentDeal.return_charge
+      : deliveryCharge;
+    const deliveryAndReturn = deliveryCharge + returnCharge;
+
+    const compensation = Math.min(heldAmount, deliveryAndReturn);
+    const sellerPayout = compensation;
+    const remainingAfterComp = Math.max(0, currentDeal.total_amount - sellerPayout);
+    const platformFee = Math.min(currentDeal.fee_amount || 0, remainingAfterComp);
+    const buyerRefund = Math.max(0, remainingAfterComp - platformFee);
+
+    if (sellerPayout > 0) {
+      await addLedger({
+        dealId: currentDeal.id,
+        type: "payout_seller",
+        amount: sellerPayout,
+        notes: `Delivery & return shipping compensation for refused order #${currentDeal.code}`,
+      });
+    }
+
+    if (platformFee > 0) {
+      await addLedger({
+        dealId: currentDeal.id,
+        type: "platform_fee",
+        amount: platformFee,
+        notes: `Platform service fee for #${currentDeal.code}`,
+      });
+    }
+
+    if (buyerRefund > 0) {
+      await addLedger({
+        dealId: currentDeal.id,
+        type: "refund_buyer",
+        amount: buyerRefund,
+        partyPhone: currentDeal.buyer_phone,
+        notes: `Refund after delivery deductions for refused order #${currentDeal.code}`,
+      });
+    }
+
+    await bumpBuyer(currentDeal.buyer_phone, "refused");
+    await log(
+      currentDeal.id,
+      "refused",
+      `Order refused at doorstep. Shipping compensation (${sellerPayout} BDT) released to seller, platform fee (${platformFee} BDT) collected, remainder (${buyerRefund} BDT) refunded to buyer.`,
+      {
+        fromStatus: deal.status,
+        toStatus: "released",
+        actor: actor,
+      }
+    );
+
+    await notify(
+      currentDeal.buyer_phone,
+      `PakkaDeal #${currentDeal.code}: Order refused at doorstep. Refund of ${buyerRefund} BDT processed after delivery charges.`,
+      "Order Refused – Refund Processed",
+      currentDeal.code
+    );
+
+    await notifySeller(
+      currentDeal.seller_id,
+      `PakkaDeal #${currentDeal.code}: Order refused at doorstep. Shipping charge compensation (${sellerPayout} BDT) released to your account.`,
+      "Order Refused",
+      currentDeal.code
+    );
+
+    return currentDeal;
+  });
 }
 
 /** Buyer confirms receipt or auto-release timer completes */
@@ -369,8 +458,16 @@ export async function releaseToSeller(deal, outcome = "buyer_confirmed", actor =
       throw new Error("Seller bKash account is not verified by admin. Payout cannot be released until seller's bKash is verified.");
     }
 
-    const payout = deal.seller_payout || (deal.price + (deal.delivery_charge || 0));
-    const fee = deal.fee_amount || Math.max(0, deal.total_amount - payout);
+    const amounts = computeAmounts({
+      dealType: deal.deal_type,
+      mode: deal.payment_mode,
+      price: deal.price,
+      charge: deal.delivery_charge,
+      returnCharge: deal.return_charge,
+      feePercent: deal.fee_percent,
+    });
+    const payout = deal.seller_payout !== undefined && deal.seller_payout !== null ? deal.seller_payout : amounts.seller_payout;
+    const fee = deal.fee_amount !== undefined && deal.fee_amount !== null ? deal.fee_amount : amounts.fee_amount;
 
     const unboxingPhoto = proofOpts.unboxingPhoto || null;
     const unboxingPhotoType = proofOpts.unboxingPhotoType || "";
@@ -410,8 +507,9 @@ export async function releaseToSeller(deal, outcome = "buyer_confirmed", actor =
     await bumpBuyer(deal.buyer_phone, "delivered");
     await bumpSeller(deal.seller_id, "completed");
 
+    const autoReleaseHours = Number(await getSetting("confirm_window_hours", config.confirmWithinHours || 72));
     const noteMsg = outcome === "auto_release_timeout"
-      ? "24-hour confirmation window expired. Escrow funds auto-released to seller."
+      ? `${autoReleaseHours}-hour confirmation window expired. Escrow funds auto-released to seller.`
       : `Buyer confirmed receipt${unboxingPhoto ? " with unboxing proof" : ""}. Money released to seller.`;
 
     await log(deal.id, "released", noteMsg, {
@@ -636,8 +734,16 @@ export async function adminForceRelease(deal, adminNotes = "", actor = "admin") 
       throw new Error("Seller bKash account is not verified by admin. Payout cannot be released until seller's bKash is verified.");
     }
 
-    const payout = deal.seller_payout || (deal.price + (deal.delivery_charge || 0));
-    const fee = deal.fee_amount || Math.max(0, deal.total_amount - payout);
+    const amounts = computeAmounts({
+      dealType: deal.deal_type,
+      mode: deal.payment_mode,
+      price: deal.price,
+      charge: deal.delivery_charge,
+      returnCharge: deal.return_charge,
+      feePercent: deal.fee_percent,
+    });
+    const payout = deal.seller_payout !== undefined && deal.seller_payout !== null ? deal.seller_payout : amounts.seller_payout;
+    const fee = deal.fee_amount !== undefined && deal.fee_amount !== null ? deal.fee_amount : amounts.fee_amount;
 
     const updated = await q(
       `update deals set status='released', outcome='admin_forced_release', auto_release_paused=1, updated_at=CURRENT_TIMESTAMP
@@ -820,7 +926,7 @@ export async function checkAllTimeouts() {
       });
     }
 
-    // 2. Delivered deals past auto_release_at (24 hours) where countdown is not paused -> auto release to seller
+    // 2. Delivered deals past auto_release_at where countdown is not paused -> auto release to seller
     const readyDeals = await q(
       `select * from deals
        where status='delivered'
@@ -832,8 +938,51 @@ export async function checkAllTimeouts() {
       [now]
     );
     for (const deal of readyDeals) {
-      console.log(`[AUTO-RELEASE TIMER] 24-hour window elapsed for deal #${deal.code}. Auto-releasing funds to seller.`);
+      console.log(`[AUTO-RELEASE TIMER] Confirmation window elapsed for deal #${deal.code}. Auto-releasing funds to seller.`);
       await releaseToSeller(deal, "auto_release_timeout", "system");
+    }
+
+    // 3. Refused delivery_only deals past refusal review window (refusal_review_hours)
+    const expiredRefusedDeals = await q(
+      `select * from deals
+       where status='refused'
+         and payment_mode='delivery_only'
+         and auto_release_paused = 0
+         and (
+           (auto_release_at is not null and auto_release_at < $1)
+           or (confirm_by is not null and confirm_by < $1)
+         )`,
+      [now]
+    );
+    for (const deal of expiredRefusedDeals) {
+      const openDispute = await one(
+        "select * from disputes where deal_id=$1 and status='open'",
+        [deal.id]
+      );
+      if (openDispute) {
+        // Claim exists: freeze funds and send to admin
+        await transaction(async () => {
+          const updated = await q(
+            `update deals set status='disputed', outcome='disputed', auto_release_paused=1, updated_at=CURRENT_TIMESTAMP
+             where id=$1 and status='refused'
+             returning *`,
+            [deal.id]
+          );
+          if (updated.length === 1) {
+            await log(deal.id, "disputed", "Buyer filed seller-fault claim during refusal review. Funds frozen for admin review.", {
+              fromStatus: "refused",
+              toStatus: "disputed",
+              actor: "system",
+            });
+            await notify(deal.buyer_phone, `PakkaDeal #${deal.code}: Refusal claim recorded. Funds are frozen pending admin decision.`);
+            await notifySeller(deal.seller_id, `PakkaDeal #${deal.code}: Buyer disputed refusal. Funds are held for admin investigation.`);
+          }
+        });
+      } else {
+        // No claim filed: window ended, pay seller compensation (cron only)
+        console.log(`[REFUSAL-REVIEW TIMER] Refusal review window expired for deal #${deal.code}. Settling seller compensation.`);
+        await settleRefusalCompensation(deal, "system");
+      }
     }
   } finally {
     isCheckingTimeouts = false;

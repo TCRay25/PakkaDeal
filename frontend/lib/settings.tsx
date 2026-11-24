@@ -6,6 +6,8 @@ import { useSocket } from "./socket";
 export type PublicSettings = {
   platform_fee_percent: string;
   platform_fee_min: string;
+  min_delivery_deposit: string;
+  refusal_review_hours: string;
   confirm_window_hours: string;
   ship_within_hours: string;
   return_deduct_shipping: string;
@@ -21,6 +23,8 @@ export type PublicSettings = {
 export const DEFAULT_PUBLIC_SETTINGS: PublicSettings = {
   platform_fee_percent: "1",
   platform_fee_min: "10",
+  min_delivery_deposit: "60",
+  refusal_review_hours: "24",
   confirm_window_hours: "72",
   ship_within_hours: "48",
   return_deduct_shipping: "true",
@@ -42,6 +46,7 @@ type SettingsContextType = {
   settings: PublicSettings;
   feePercent: number;
   feeMin: number;
+  minDeliveryDeposit: number;
   confirmHours: number;
   shipHours: number;
   calculateFee: (amount: number) => number;
@@ -54,6 +59,7 @@ const SettingsContext = createContext<SettingsContextType>({
   settings: DEFAULT_PUBLIC_SETTINGS,
   feePercent: 1,
   feeMin: 10,
+  minDeliveryDeposit: 60,
   confirmHours: 72,
   shipHours: 48,
   calculateFee: (amount: number) => Math.max(10, Math.round((amount * 1) / 100)),
@@ -97,6 +103,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const feePercent = !isNaN(rawFee) && settings.platform_fee_percent !== "" ? rawFee : 1;
   const rawMin = Number(settings.platform_fee_min);
   const feeMin = !isNaN(rawMin) && settings.platform_fee_min !== "" ? rawMin : 10;
+  const rawMinDeposit = Number(settings.min_delivery_deposit);
+  const minDeliveryDeposit = !isNaN(rawMinDeposit) && settings.min_delivery_deposit !== "" ? rawMinDeposit : 60;
   const confirmHours = Number(settings.confirm_window_hours) || 72;
   const shipHours = Number(settings.ship_within_hours) || 48;
 
@@ -129,6 +137,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         settings,
         feePercent,
         feeMin,
+        minDeliveryDeposit,
         confirmHours,
         shipHours,
         calculateFee,

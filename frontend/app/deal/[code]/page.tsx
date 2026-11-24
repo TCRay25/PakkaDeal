@@ -55,6 +55,7 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
+  const [switchingMode, setSwitchingMode] = useState(false);
 
   // Modal states
   const [showPayModal, setShowPayModal] = useState(false);
@@ -198,6 +199,19 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
   };
 
   // Actions
+  const handleSwitchPaymentMode = async (mode: "delivery_only" | "full_payment") => {
+    if (!deal) return;
+    setSwitchingMode(true);
+    try {
+      await post(`/deals/${deal.code}/payment-mode`, { payment_mode: mode });
+      load();
+    } catch (x: any) {
+      alert(x.message || "Failed to switch payment mode");
+    } finally {
+      setSwitchingMode(false);
+    }
+  };
+
   const handlePay = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (me?.is_seller) {
@@ -681,13 +695,31 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                         <div className="text-2xl font-extrabold text-neutral-900 dark:text-neutral-100 font-mono">
                           {deal.total_amount.toLocaleString()} {lang === "bn" ? "টাকা" : "BDT"}
                         </div>
-                        {deal.fee_amount > 0 && (
-                          <div className="text-xs text-accent font-mono">
-                            {lang === "bn"
-                              ? `(পণ্যের মূল্য: ${deal.price.toLocaleString()} + ডেলিভারি: ${(deal.delivery_charge || 0).toLocaleString()} + ${toBengaliDigits(deal.fee_percent || 1)}% এসক্রো চার্জ: ${deal.fee_amount.toLocaleString()} টাকা)`
-                              : `(Price: ${deal.price.toLocaleString()} + Delivery: ${(deal.delivery_charge || 0).toLocaleString()} + ${deal.fee_percent || 1}% Escrow Fee: ${deal.fee_amount.toLocaleString()} BDT)`}
-                          </div>
-                        )}
+
+                        {/* Breakdown text */}
+                        <div className="text-xs text-neutral-700 dark:text-neutral-300 font-mono space-y-0.5">
+                          {deal.payment_mode === "delivery_only" && (deal.cod_amount || 0) > 0 ? (
+                            <>
+                              <div>
+                                {lang === "bn"
+                                  ? `(অগ্রিম ডেলিভারি ডিপোজিট: ${(deal.seller_payout || (deal.total_amount - (deal.fee_amount || 0))).toLocaleString()} + ${toBengaliDigits(deal.fee_percent || 1)}% ফি: ${(deal.fee_amount || 0).toLocaleString()} টাকা)`
+                                  : `(Delivery Deposit: ${(deal.seller_payout || (deal.total_amount - (deal.fee_amount || 0))).toLocaleString()} + ${deal.fee_percent || 1}% Escrow Fee: ${(deal.fee_amount || 0).toLocaleString()} BDT)`}
+                              </div>
+                              <div className="text-emerald-700 dark:text-emerald-400 font-semibold">
+                                {lang === "bn"
+                                  ? `ডেলিভারির সময় কুরিয়ারকে প্রদেয় (COD): ${deal.cod_amount?.toLocaleString()} টাকা`
+                                  : `Due to courier in cash upon delivery (COD): ${deal.cod_amount?.toLocaleString()} BDT`}
+                              </div>
+                            </>
+                          ) : (
+                            <div>
+                              {lang === "bn"
+                                ? `(পণ্যের মূল্য: ${deal.price.toLocaleString()} + ডেলিভারি: ${(deal.delivery_charge || 0).toLocaleString()} + ${toBengaliDigits(deal.fee_percent || 1)}% ফি: ${(deal.fee_amount || 0).toLocaleString()} টাকা)`
+                                : `(Price: ${deal.price.toLocaleString()} + Delivery: ${(deal.delivery_charge || 0).toLocaleString()} + ${deal.fee_percent || 1}% Escrow Fee: ${(deal.fee_amount || 0).toLocaleString()} BDT)`}
+                            </div>
+                          )}
+                        </div>
+
                         <p className="text-xs text-neutral-600 dark:text-neutral-400">
                           {lang === "bn"
                             ? "টাকা সরাসরি পাক্কাডিল এসক্রো ভল্টে নিরাপদে জমা থাকবে। আপনি পণ্য হাতে পেয়ে যাচাই না করা পর্যন্ত বিক্রেতা কোনো টাকা পাবেন না।"
@@ -707,6 +739,75 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
                       </button>
                     </div>
 
+                    {/* Buyer Payment Mode Switcher before payment */}
+                    {deal.deal_type === "product" && (
+                      <div className="p-3 bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 space-y-2">
+                        {deal.payment_mode === "delivery_only" ? (
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                              <span className="text-xs font-bold text-accent uppercase tracking-wider block">
+                                🛡️ {lang === "bn" ? "সর্বোচ্চ এসক্রো সুরক্ষা চান?" : "Want Maximum Protection?"}
+                              </span>
+                              <p className="text-[11px] text-neutral-600 dark:text-neutral-400">
+                                {lang === "bn"
+                                  ? "বর্তমান মোডে পণ্যের মূল্য কুরিয়ারকে ক্যাশ অন ডেলিভারি দিতে হবে। আপনি চাইলে পুরো মূল্য এসক্রোতে জমা দিয়ে সর্বোচ্চ সুরক্ষা পেতে পারেন।"
+                                  : t("payEverythingInEscrowDesc")}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleSwitchPaymentMode("full_payment")}
+                              disabled={switchingMode}
+                              className="btn-ghost text-xs py-2 px-3 font-semibold shrink-0"
+                            >
+                              {switchingMode
+                                ? t("loading")
+                                : (lang === "bn"
+                                    ? "সব টাকা এসক্রোতে জমা দিন (সর্বোচ্চ সুরক্ষা) →"
+                                    : t("payEverythingInEscrow") + " →")}
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                              <span className="text-xs font-bold text-neutral-700 dark:text-neutral-300 uppercase tracking-wider block">
+                                📦 {lang === "bn" ? "ক্যাশ অন ডেলিভারিতে দিতে চান?" : "Prefer Cash on Delivery?"}
+                              </span>
+                              <p className="text-[11px] text-neutral-600 dark:text-neutral-400">
+                                {lang === "bn"
+                                  ? "অগ্রিম শুধুমাত্র ডেলিভারি চার্জ জমা দিন এবং পণ্যের মূল্য পার্সেল পেয়ে কুরিয়ারকে দিন।"
+                                  : "Pay delivery charge only in escrow and pay the product price in cash to the courier on delivery."}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleSwitchPaymentMode("delivery_only")}
+                              disabled={switchingMode}
+                              className="btn-ghost text-xs py-2 px-3 font-semibold shrink-0"
+                            >
+                              {switchingMode
+                                ? t("loading")
+                                : (lang === "bn"
+                                    ? "শুধু ডেলিভারি চার্জ অগ্রিম দিন (ক্যাশ অন ডেলিভারি) →"
+                                    : t("switchToDeliveryOnly") + " →")}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Plain Words Refusal Rule Notice */}
+                    <div className="p-3 border border-amber-500/40 bg-amber-500/10 text-xs text-amber-900 dark:text-amber-200 space-y-1">
+                      <span className="font-bold flex items-center gap-1.5">
+                        ⚖️ {lang === "bn" ? "পার্সেল প্রত্যাখ্যানের নিয়ম" : t("refusalRuleTitle")}
+                      </span>
+                      <p className="text-[11px] leading-relaxed">
+                        {lang === "bn"
+                          ? "আপনি যদি সঠিক পার্সেল নিতে অস্বীকার করেন, তবে আপনার ডেলিভারি চার্জ বিক্রেতাকে ক্ষতিপূরণ হিসেবে দেওয়া হবে।"
+                          : t("refusalRuleNotice")}
+                      </p>
+                    </div>
+
                     {!user && (
                       <p className="text-[11px] text-neutral-500 italic">
                         {lang === "bn"
@@ -722,6 +823,26 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
             {/* State: held */}
             {deal.status === "held" && (
               <div className="space-y-4">
+                {/* Seller COD reminder if delivery_only */}
+                {me.is_seller && deal.payment_mode === "delivery_only" && (deal.cod_amount || 0) > 0 && (
+                  <div className="p-4 border-2 border-amber-500 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 space-y-1.5">
+                    <div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider">
+                      <span>📦</span>
+                      <span>{lang === "bn" ? "কুরিয়ার প্যানেল বুকিং নির্দেশনা (COD)" : "Courier Booking Instruction"}</span>
+                    </div>
+                    <p className="text-sm font-bold">
+                      {lang === "bn"
+                        ? `আপনার কুরিয়ার প্যানেলে এই পার্সেলটি ${(deal.cod_amount || 0).toLocaleString()} টাকা ক্যাশ অন ডেলিভারি (COD) হিসেবে বুক করুন।`
+                        : `Book this parcel as COD with amount ${(deal.cod_amount || 0).toLocaleString()} BDT in your courier panel.`}
+                    </p>
+                    <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                      {lang === "bn"
+                        ? `ক্রেতার ডেলিভারি চার্জ ইতিমধ্যে এসক্রোতে জমা আছে। কুরিয়ার ডেলিভারির সময় পণ্যের মূল্য (${(deal.cod_amount || 0).toLocaleString()} টাকা) নগদ সংগ্রহ করবে।`
+                        : `Buyer already paid shipping into escrow. The courier must collect the product price (${(deal.cod_amount || 0).toLocaleString()} BDT) upon doorstep delivery.`}
+                    </p>
+                  </div>
+                )}
+
                 <p className="text-sm text-neutral-700 dark:text-neutral-300">
                   {deal.deal_type === "product"
                     ? (lang === "bn"
@@ -758,6 +879,25 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
             {/* State: shipped or in_transit */}
             {(deal.status === "shipped" || deal.status === "in_transit") && (
               <div className="space-y-4">
+                {/* Banner for Seller after shipping (COD requirement) */}
+                {me.is_seller && deal.payment_mode === "delivery_only" && (deal.cod_amount || 0) > 0 && (
+                  <div className="p-4 border-2 border-amber-500 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 space-y-1.5">
+                    <div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider">
+                      <span>📦</span>
+                      <span>{lang === "bn" ? "কুরিয়ার প্যানেল বুকিং নির্দেশনা (COD)" : "Courier Booking Instruction"}</span>
+                    </div>
+                    <p className="text-sm font-bold">
+                      {lang === "bn"
+                        ? `আপনার কুরিয়ার প্যানেলে এই পার্সেলটি ${(deal.cod_amount || 0).toLocaleString()} টাকা ক্যাশ অন ডেলিভারি (COD) হিসেবে বুক করুন।`
+                        : `Book this parcel as COD with amount ${(deal.cod_amount || 0).toLocaleString()} BDT in your courier panel.`}
+                    </p>
+                    <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                      {lang === "bn"
+                        ? `ক্রেতার ডেলিভারি চার্জ ইতিমধ্যে এসক্রোতে জমা আছে। কুরিয়ার ডেলিভারির সময় পণ্যের মূল্য (${(deal.cod_amount || 0).toLocaleString()} টাকা) নগদ সংগ্রহ করবে।`
+                        : `Buyer already paid shipping into escrow. The courier must collect the product price upon doorstep delivery.`}
+                    </p>
+                  </div>
+                )}
                 <TrackingTimeline
                   tracking={data.tracking}
                   deal={deal}
@@ -1191,6 +1331,9 @@ export default function DealPage({ params }: { params: Promise<{ code: string }>
               <strong className="block text-neutral-900 dark:text-neutral-100">🔒 {t("escrowGuaranteeTitle")}:</strong>
               <p>
                 {t("escrowGuaranteeText")}
+              </p>
+              <p className="text-amber-800 dark:text-amber-300 font-semibold pt-1 border-t border-neutral-200 dark:border-neutral-800">
+                ⚖️ {lang === "bn" ? "পার্সেল প্রত্যাখ্যানের নিয়ম: আপনি যদি সঠিক পার্সেল নিতে অস্বীকার করেন, তবে আপনার ডেলিভারি চার্জ বিক্রেতাকে প্রদান করা হবে।" : t("refusalRuleNotice")}
               </p>
             </div>
 

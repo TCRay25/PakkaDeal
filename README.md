@@ -2,7 +2,7 @@
 
 > **No fake orders. No fake sellers. Real escrow trust for Bangladesh.**
 
-PakkaDeal is a complete trust-and-escrow platform designed for Bangladesh. When two parties make a deal (Buyer & Seller for online shopping, Tenant & Landlord for rental advance, or Client & Freelancer for service milestones), the buyer deposits the full amount into PakkaDeal's merchant escrow. PakkaDeal locks the funds until the promised product is received and inspected, or until both parties confirm handover. Only then is the seller paid (minus a 2% platform fee). This stops fake sellers, fake advance payment scams, and fake order refusals at the doorstep.
+PakkaDeal is a complete trust-and-escrow platform designed for Bangladesh. When two parties make a deal (Buyer & Seller for online shopping, Tenant & Landlord for rental advance, or Client & Freelancer for service milestones), the buyer deposits the full amount into PakkaDeal's merchant escrow. PakkaDeal locks the funds until the promised product is received and inspected, or until both parties confirm handover. Only then is the seller paid (minus a 1% platform fee). This stops fake sellers, fake advance payment scams, and fake order refusals at the doorstep.
 
 ---
 
@@ -63,7 +63,7 @@ All accounts use the demo verification OTP: **`123456`**.
 4. **Courier Delivery & Inspection Window**:
    - Courier webhook reports `delivered`.
    - Buyer receives a **72-hour confirmation window**.
-   - Buyer inspects item and clicks **Confirm Received** $\rightarrow$ Funds released to seller minus 2% fee.
+   - Buyer inspects item and clicks **Confirm Received** $\rightarrow$ Funds released to seller.
    - If buyer takes no action, funds auto-release after 72 hours.
    - If buyer refuses parcel at doorstep, seller is compensated delivery + return charges from escrow deposit; buyer receives the refund balance.
    - If seller fails to dispatch within 48 hours, buyer receives an automatic full refund.
@@ -84,7 +84,7 @@ All accounts use the demo verification OTP: **`123456`**.
 ## Financial Ledger & Money Rules
 
 - **Deterministic Code Execution**: AI never moves money. Payouts and refunds strictly follow deterministic code rules in `backend/src/services/settle.js`.
-- **Platform Fee**: Configurable in Admin Settings, default 2% (minimum 10 BDT), deducted only upon successful deal completion.
+- **Platform Fee**: Configurable in Admin Settings (`platform_fee_percent`), default 1% (minimum 10 BDT), deducted only upon successful deal completion.
 - **Ledger Audit**: Every hold, payout, refund, and fee deduction is recorded in the append-only `ledger` table and viewable under `/dashboard/wallet` and `/admin/ledger`.
 - **Regulatory Notice**: For production launch in Bangladesh, all customer funds must be held in regulated custodial escrow accounts under Bangladesh Bank guidelines with licensed commercial banks and Payment Service Providers (PSPs). The demo uses a sandbox simulation.
 

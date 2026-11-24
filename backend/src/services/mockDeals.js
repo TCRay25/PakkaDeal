@@ -1,10 +1,12 @@
 import { q, one, initDb } from "../db.js";
+import { computeAmounts } from "./amounts.js";
 
 export async function seed50MockDeals({ force = false } = {}) {
   await initDb();
   if (!force) {
     const existing = Number((await one("select count(*) as cnt from deals where code like 'PK-MOCK-%'"))?.cnt || 0);
-    if (existing >= 50) {
+    const delivOnly = Number((await one("select count(*) as cnt from deals where code like 'PK-MOCK-%' and payment_mode='delivery_only'"))?.cnt || 0);
+    if (existing >= 50 && delivOnly >= 20) {
       return { skipped: true, count: existing };
     }
   }
@@ -93,6 +95,7 @@ export async function seed50MockDeals({ force = false } = {}) {
     {
       code: "PK-MOCK-01",
       deal_type: "product",
+      payment_mode: "full_payment",
       seller_phone: "01711223344",
       buyer_phone: "01755667788",
       buyer_name: "Nusrat Jahan",
@@ -180,6 +183,7 @@ export async function seed50MockDeals({ force = false } = {}) {
     {
       code: "PK-MOCK-05",
       deal_type: "product",
+      payment_mode: "full_payment",
       seller_phone: "01710112233",
       buyer_phone: "01922334455",
       buyer_name: "Mehedi Hasan",
@@ -270,6 +274,7 @@ export async function seed50MockDeals({ force = false } = {}) {
     {
       code: "PK-MOCK-09",
       deal_type: "product",
+      payment_mode: "full_payment",
       seller_phone: "01711223344",
       buyer_phone: "01755667788",
       buyer_name: "Nusrat Jahan",
@@ -336,6 +341,7 @@ export async function seed50MockDeals({ force = false } = {}) {
     {
       code: "PK-MOCK-12",
       deal_type: "product",
+      payment_mode: "full_payment",
       seller_phone: "01710112233",
       buyer_phone: "01955667788",
       buyer_name: "Farhan Kabir",
@@ -405,6 +411,7 @@ export async function seed50MockDeals({ force = false } = {}) {
     {
       code: "PK-MOCK-15",
       deal_type: "product",
+      payment_mode: "full_payment",
       seller_phone: "01711223344",
       buyer_phone: "01655667788",
       buyer_name: "Arifur Rahman",
@@ -477,6 +484,7 @@ export async function seed50MockDeals({ force = false } = {}) {
     {
       code: "PK-MOCK-18",
       deal_type: "product",
+      payment_mode: "full_payment",
       seller_phone: "01711223344",
       buyer_phone: "01733445566",
       buyer_name: "Rashed Karim",
@@ -552,6 +560,7 @@ export async function seed50MockDeals({ force = false } = {}) {
     {
       code: "PK-MOCK-21",
       deal_type: "product",
+      payment_mode: "full_payment",
       seller_phone: "01710112233",
       buyer_phone: "01833445566",
       buyer_name: "Tahmina Rahman",
@@ -675,6 +684,7 @@ export async function seed50MockDeals({ force = false } = {}) {
     {
       code: "PK-MOCK-26",
       deal_type: "product",
+      payment_mode: "full_payment",
       seller_phone: "01711223344",
       buyer_phone: "01655667788",
       buyer_name: "Arifur Rahman",
@@ -747,6 +757,7 @@ export async function seed50MockDeals({ force = false } = {}) {
     {
       code: "PK-MOCK-29",
       deal_type: "product",
+      payment_mode: "full_payment",
       seller_phone: "01710112233",
       buyer_phone: "01722334455",
       buyer_name: "Sadia Islam",
@@ -821,6 +832,7 @@ export async function seed50MockDeals({ force = false } = {}) {
     {
       code: "PK-MOCK-32",
       deal_type: "product",
+      payment_mode: "full_payment",
       seller_phone: "01711223344",
       buyer_phone: "01755667788",
       buyer_name: "Nusrat Jahan",
@@ -1071,6 +1083,7 @@ export async function seed50MockDeals({ force = false } = {}) {
     {
       code: "PK-MOCK-41",
       deal_type: "product",
+      payment_mode: "full_payment",
       seller_phone: "01811223344",
       buyer_phone: "01622334455",
       buyer_name: "Tanjila Akter",
@@ -1181,6 +1194,7 @@ export async function seed50MockDeals({ force = false } = {}) {
     {
       code: "PK-MOCK-45",
       deal_type: "product",
+      payment_mode: "full_payment",
       seller_phone: "01711223344",
       buyer_phone: "01755667788",
       buyer_name: "Nusrat Jahan",
@@ -1265,10 +1279,11 @@ export async function seed50MockDeals({ force = false } = {}) {
       days_ago: 21,
     },
 
-    // --- 12. REFUNDED (2 deals) ---
+    // --- 12. REFUSED AT DOOR & REFUNDED (2 deals) ---
     {
       code: "PK-MOCK-48",
       deal_type: "product",
+      payment_mode: "delivery_only",
       seller_phone: "01811223344",
       buyer_phone: "01655667788",
       buyer_name: "Arifur Rahman",
@@ -1280,8 +1295,8 @@ export async function seed50MockDeals({ force = false } = {}) {
       delivery_charge: 100,
       return_policy: "buyer_pays",
       return_charge: 100,
-      status: "refunded",
-      outcome: "doorstep_refusal",
+      status: "released",
+      outcome: "refused_at_door",
       courier_name: "Steadfast",
       tracking_id: "ST-441209",
       courier_status: "refused",
@@ -1295,6 +1310,7 @@ export async function seed50MockDeals({ force = false } = {}) {
     {
       code: "PK-MOCK-49",
       deal_type: "product",
+      payment_mode: "delivery_only",
       seller_phone: "01711223344",
       buyer_phone: "01722334455",
       buyer_name: "Sadia Islam",
@@ -1305,8 +1321,9 @@ export async function seed50MockDeals({ force = false } = {}) {
       price: 16500,
       delivery_charge: 120,
       return_policy: "buyer_pays",
+      return_charge: 120,
       status: "refunded",
-      outcome: "seller_unresponsive",
+      outcome: "seller_ship_timeout",
       courier_name: "Steadfast",
       risk_score: 20,
       risk_reasons: "Auto-refunded due to seller shipping timeout",
@@ -1348,10 +1365,29 @@ export async function seed50MockDeals({ force = false } = {}) {
   for (const d of rawDeals) {
     const sellerId = sellerMap[d.seller_phone] || 2;
     const buyerId = buyerMap[d.buyer_phone] || null;
-    const totalAmount = d.price + (d.delivery_charge || 0);
+
+    const isProduct = d.deal_type === "product";
+    const mode = isProduct
+      ? (d.payment_mode === "full_payment" ? "full_payment" : "delivery_only")
+      : "full_payment";
+    const returnCharge = d.return_charge !== undefined ? d.return_charge : (d.delivery_charge || 0);
+
+    const amounts = computeAmounts({
+      dealType: d.deal_type,
+      mode,
+      price: d.price,
+      charge: d.delivery_charge || 0,
+      returnCharge,
+      feePercent: 1.0,
+      feeMin: 10,
+      minDeposit: 60,
+    });
+
+    const totalAmount = amounts.total_amount;
+    const feeAmount = amounts.fee_amount;
+    const sellerPayout = amounts.seller_payout;
+    const codAmount = amounts.cod_amount;
     const feePercent = 1.0;
-    const feeAmount = Math.max(Math.round((totalAmount * feePercent) / 100), 10);
-    const sellerPayout = totalAmount - feeAmount;
 
     // Deposit is held for held, shipped, in_transit, delivered, released, disputed, return_*, refunded
     const isFunded = [
@@ -1382,27 +1418,31 @@ export async function seed50MockDeals({ force = false } = {}) {
 
     const row = await one(
       `insert into deals(
-        code, deal_type, seller_id, buyer_phone, buyer_name, buyer_id, address, area, product, details,
+        code, deal_type, payment_mode, cod_amount, seller_id, buyer_phone, buyer_name, buyer_id, address, area, product, details,
         price, delivery_charge, total_amount, fee_amount, fee_percent, seller_payout, deposit,
         return_policy, return_charge, status, outcome, courier_name, tracking_id, courier_status,
         return_courier_name, return_tracking_id, return_courier_status,
         seller_confirmed, buyer_confirmed, risk_score, risk_reasons, buyer_trust,
-        ship_by, confirm_by, payment_method, payment_sender, payment_trx_id, payment_amount,
+        ship_by, confirm_by, auto_release_at, auto_release_paused,
+        payment_method, payment_sender, payment_trx_id, payment_amount,
         payment_status, payout_status, payout_trx_id, payout_at, is_manual_courier,
         created_at, updated_at
       ) values(
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-        $11, $12, $13, $14, $15, $16, $17,
-        $18, $19, $20, $21, $22, $23, $24,
-        $25, $26, $27,
-        $28, $29, $30, $31, $32,
-        $33, $34, $35, $36, $37, $38,
-        $39, $40, $41, $42, $43,
-        $44, $45
+        $11, $12, $13, $14, $15, $16, $17, $18, $19,
+        $20, $21, $22, $23, $24, $25, $26,
+        $27, $28, $29,
+        $30, $31, $32, $33, $34,
+        $35, $36, $37, $38,
+        $39, $40, $41, $42,
+        $43, $44, $45, $46, $47,
+        $48, $49
       ) returning id`,
       [
         d.code,
         d.deal_type,
+        mode,
+        codAmount,
         sellerId,
         d.buyer_phone,
         d.buyer_name,
@@ -1419,7 +1459,7 @@ export async function seed50MockDeals({ force = false } = {}) {
         sellerPayout,
         deposit,
         d.return_policy || "buyer_pays",
-        d.return_charge || 0,
+        returnCharge,
         d.status,
         d.outcome || "",
         d.courier_name || "Steadfast",
@@ -1435,6 +1475,8 @@ export async function seed50MockDeals({ force = false } = {}) {
         d.buyer_trust || 75,
         shipBy,
         confirmBy,
+        d.status === "delivered" ? confirmBy : null,
+        d.status === "delivered" ? 0 : 1,
         d.payment_method || "bKash",
         isFunded ? d.buyer_phone : "",
         paymentTrxId,
@@ -1474,7 +1516,7 @@ export async function seed50MockDeals({ force = false } = {}) {
         [dealId, `Buyer deposited ${totalAmount} BDT via ${d.payment_method} Escrow Vault (TrxID: ${paymentTrxId})`, createdAt]
       );
 
-      // Ledger entry for Escrow Hold
+      // Ledger entry for Escrow Hold: EXACTLY totalAmount
       await q(
         `insert into ledger(deal_id, transaction_type, amount, party_phone, balance_after, notes, created_at)
          values($1, 'hold', $2, $3, $2, $4, $5)`,
@@ -1526,23 +1568,61 @@ export async function seed50MockDeals({ force = false } = {}) {
     }
 
     if (d.status === "released") {
-      await q(
-        `insert into deal_events(deal_id, kind, from_status, to_status, actor, note, created_at)
-         values($1, 'released', 'delivered', 'released', 'system', $2, $3)`,
-        [dealId, `Funds released: ${sellerPayout} BDT paid to seller (${d.seller_phone}), ${feeAmount} BDT platform fee collected`, updatedAt]
-      );
+      if (d.outcome === "refused_at_door") {
+        const deliveryCharge = d.delivery_charge || 0;
+        const deliveryAndReturn = deliveryCharge + returnCharge;
+        const compensation = Math.min(amounts.held_amount, deliveryAndReturn);
+        const sellerPayoutComp = compensation;
+        const remainingAfterComp = Math.max(0, totalAmount - sellerPayoutComp);
+        const platformFeeComp = Math.min(feeAmount, remainingAfterComp);
+        const buyerRefundComp = Math.max(0, remainingAfterComp - platformFeeComp);
 
-      // Ledger: payout & fee
-      await q(
-        `insert into ledger(deal_id, transaction_type, amount, party_phone, balance_after, notes, created_at)
-         values($1, 'payout_seller', $2, $3, $4, $5, $6)`,
-        [dealId, sellerPayout, d.seller_phone, feeAmount, `Payout to seller for deal ${d.code} (${payoutTrxId})`, updatedAt]
-      );
-      await q(
-        `insert into ledger(deal_id, transaction_type, amount, party_phone, balance_after, notes, created_at)
-         values($1, 'platform_fee', $2, 'system', 0, $3, $4)`,
-        [dealId, feeAmount, `1% platform fee for deal ${d.code}`, updatedAt]
-      );
+        await q(
+          `insert into deal_events(deal_id, kind, from_status, to_status, actor, note, created_at)
+           values($1, 'refused', 'delivered', 'released', 'system', $2, $3)`,
+          [dealId, `Doorstep refusal settled: ${sellerPayoutComp} BDT shipping compensation paid to seller (${d.seller_phone}), ${platformFeeComp} BDT platform fee collected, ${buyerRefundComp} BDT refunded to buyer`, updatedAt]
+        );
+
+        if (sellerPayoutComp > 0) {
+          await q(
+            `insert into ledger(deal_id, transaction_type, amount, party_phone, balance_after, notes, created_at)
+             values($1, 'payout_seller', $2, $3, $4, $5, $6)`,
+            [dealId, sellerPayoutComp, d.seller_phone, platformFeeComp + buyerRefundComp, `Delivery & return shipping compensation for deal ${d.code}`, updatedAt]
+          );
+        }
+        if (platformFeeComp > 0) {
+          await q(
+            `insert into ledger(deal_id, transaction_type, amount, party_phone, balance_after, notes, created_at)
+             values($1, 'platform_fee', $2, 'system', $3, $4, $5)`,
+            [dealId, platformFeeComp, buyerRefundComp, `Platform service fee for deal ${d.code}`, updatedAt]
+          );
+        }
+        if (buyerRefundComp > 0) {
+          await q(
+            `insert into ledger(deal_id, transaction_type, amount, party_phone, balance_after, notes, created_at)
+             values($1, 'refund_buyer', $2, $3, 0, $4, $5)`,
+            [dealId, buyerRefundComp, d.buyer_phone, `Refund after delivery deductions for deal ${d.code}`, updatedAt]
+          );
+        }
+      } else {
+        await q(
+          `insert into deal_events(deal_id, kind, from_status, to_status, actor, note, created_at)
+           values($1, 'released', 'delivered', 'released', 'system', $2, $3)`,
+          [dealId, `Funds released: ${sellerPayout} BDT paid to seller (${d.seller_phone}), ${feeAmount} BDT platform fee collected`, updatedAt]
+        );
+
+        // Ledger: payout & fee exactly equal totalAmount
+        await q(
+          `insert into ledger(deal_id, transaction_type, amount, party_phone, balance_after, notes, created_at)
+           values($1, 'payout_seller', $2, $3, $4, $5, $6)`,
+          [dealId, sellerPayout, d.seller_phone, feeAmount, `Payout to seller for deal ${d.code} (${payoutTrxId})`, updatedAt]
+        );
+        await q(
+          `insert into ledger(deal_id, transaction_type, amount, party_phone, balance_after, notes, created_at)
+           values($1, 'platform_fee', $2, 'system', 0, $3, $4)`,
+          [dealId, feeAmount, `1% platform fee for deal ${d.code}`, updatedAt]
+        );
+      }
     }
 
     if (d.status === "disputed" || d.dispute_reason) {
@@ -1594,17 +1674,56 @@ export async function seed50MockDeals({ force = false } = {}) {
     }
 
     if (d.status === "refunded") {
-      await q(
-        `insert into deal_events(deal_id, kind, from_status, to_status, actor, note, created_at)
-         values($1, 'refunded', 'held', 'refunded', 'system', $2, $3)`,
-        [dealId, `Refund executed: ${totalAmount} BDT returned to buyer's bKash account`, updatedAt]
-      );
+      if (d.outcome === "return_received") {
+        const returnDeduction = d.return_policy === "buyer_pays" ? (d.delivery_charge || 0) : 0;
+        const platformFeeRet = feeAmount;
+        const refundAmountRet = Math.max(0, totalAmount - returnDeduction - platformFeeRet);
 
-      await q(
-        `insert into ledger(deal_id, transaction_type, amount, party_phone, balance_after, notes, created_at)
-         values($1, 'refund_buyer', $2, $3, 0, $4, $5)`,
-        [dealId, totalAmount, d.buyer_phone, `Refund returned to buyer for ${d.code}`, updatedAt]
-      );
+        await q(
+          `insert into deal_events(deal_id, kind, from_status, to_status, actor, note, created_at)
+           values($1, 'refunded', 'return_received', 'refunded', 'system', $2, $3)`,
+          [dealId, `Return verified. Buyer refunded ${refundAmountRet} BDT (deductions: ${returnDeduction} BDT return fee, ${platformFeeRet} BDT platform fee).`, updatedAt]
+        );
+
+        if (returnDeduction > 0) {
+          await q(
+            `insert into ledger(deal_id, transaction_type, amount, party_phone, balance_after, notes, created_at)
+             values($1, 'payout_seller', $2, $3, 0, $4, $5)`,
+            [dealId, returnDeduction, d.seller_phone, `Return shipping deduction credited to seller for deal ${d.code}`, updatedAt]
+          );
+        }
+        if (platformFeeRet > 0) {
+          await q(
+            `insert into ledger(deal_id, transaction_type, amount, party_phone, balance_after, notes, created_at)
+             values($1, 'platform_fee', $2, 'system', 0, $3, $4)`,
+            [dealId, platformFeeRet, `Platform fee for returned deal ${d.code}`, updatedAt]
+          );
+        }
+        if (refundAmountRet > 0) {
+          await q(
+            `insert into ledger(deal_id, transaction_type, amount, party_phone, balance_after, notes, created_at)
+             values($1, 'refund_buyer', $2, $3, 0, $4, $5)`,
+            [dealId, refundAmountRet, d.buyer_phone, `Refund to buyer after return received for deal ${d.code}`, updatedAt]
+          );
+        }
+      } else {
+        const refundNote = d.outcome === "seller_ship_timeout"
+          ? `Seller did not ship within deadline. Automatic full refund of ${totalAmount} BDT executed to buyer's bKash account.`
+          : `Refund executed: ${totalAmount} BDT returned to buyer's bKash account`;
+
+        await q(
+          `insert into deal_events(deal_id, kind, from_status, to_status, actor, note, created_at)
+           values($1, 'refunded', 'held', 'refunded', 'system', $2, $3)`,
+          [dealId, refundNote, updatedAt]
+        );
+
+        // Ledger: refund to buyer exactly equal totalAmount
+        await q(
+          `insert into ledger(deal_id, transaction_type, amount, party_phone, balance_after, notes, created_at)
+           values($1, 'refund_buyer', $2, $3, 0, $4, $5)`,
+          [dealId, totalAmount, d.buyer_phone, `Refund returned to buyer for ${d.code}`, updatedAt]
+        );
+      }
     }
 
     if (d.status === "cancelled") {

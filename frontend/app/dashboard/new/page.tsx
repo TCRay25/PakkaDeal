@@ -10,10 +10,11 @@ import { useSettings } from "@/lib/settings";
 export default function CreateDealPage() {
   const { t, lang } = useI18n();
   const { user } = useAuth();
-  const { calculateFee, formatFeePercent } = useSettings();
+  const { calculateFee, formatFeePercent, minDeliveryDeposit } = useSettings();
   const router = useRouter();
 
   const [dealType, setDealType] = useState<"product" | "rental" | "service">("product");
+  const [paymentMode, setPaymentMode] = useState<"delivery_only" | "full_payment">("delivery_only");
   const [buyerName, setBuyerName] = useState("");
   const [buyerPhone, setBuyerPhone] = useState("");
   const [product, setProduct] = useState("");
@@ -30,6 +31,12 @@ export default function CreateDealPage() {
   const [err, setErr] = useState("");
 
   const charge = dealType === "product" ? Number(deliveryCharge) || 0 : 0;
+  const isDeliveryOnly = dealType === "product" && paymentMode === "delivery_only";
+  const rc = returnPolicy !== "no_returns" ? Number(returnCharge) || 0 : charge;
+  const heldDeposit = isDeliveryOnly ? Math.max(charge + rc, minDeliveryDeposit) : Number(price || 0) + charge;
+  const escrowFee = calculateFee(heldDeposit);
+  const totalBuyerDeposit = heldDeposit + escrowFee;
+  const codAmount = isDeliveryOnly ? Number(price || 0) : 0;
   const sellerPayout = Number(price || 0) + charge;
 
   async function handleSubmit(e: React.FormEvent) {
@@ -40,6 +47,7 @@ export default function CreateDealPage() {
     try {
       const res = await post("/deals", {
         deal_type: dealType,
+        payment_mode: dealType === "product" ? paymentMode : "full_payment",
         buyer_name: buyerName,
         buyer_phone: buyerPhone,
         product,
@@ -242,6 +250,56 @@ export default function CreateDealPage() {
           {/* Product-Specific Options */}
           {dealType === "product" && (
             <div className="box p-4 bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 space-y-4">
+              {/* Payment Mode Selector */}
+              <div className="space-y-2">
+                <label htmlFor="deal-payment-mode">{t("paymentMode")}</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMode("delivery_only")}
+                    className={`p-3 text-left border text-xs font-semibold ${
+                      paymentMode === "delivery_only"
+                        ? "border-accent bg-accent text-white"
+                        : "border-neutral-300 dark:border-neutral-700 bg-transparent text-neutral-700 dark:text-neutral-300"
+                    }`}
+                  >
+                    <span className="block font-bold mb-1">{t("paymentModeDeliveryOnly")}</span>
+                    <span className="block text-[11px] opacity-90 font-normal">
+                      {t("paymentModeDeliveryOnlyDesc")}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMode("full_payment")}
+                    className={`p-3 text-left border text-xs font-semibold ${
+                      paymentMode === "full_payment"
+                        ? "border-accent bg-accent text-white"
+                        : "border-neutral-300 dark:border-neutral-700 bg-transparent text-neutral-700 dark:text-neutral-300"
+                    }`}
+                  >
+                    <span className="block font-bold mb-1">{t("paymentModeFullPayment")}</span>
+                    <span className="block text-[11px] opacity-90 font-normal">
+                      {t("paymentModeFullPaymentDesc")}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Minimum deposit warning if delivery charge is below min_delivery_deposit */}
+                {paymentMode === "delivery_only" && charge < minDeliveryDeposit && (
+                  <div className="p-3 border border-amber-500/40 bg-amber-500/10 text-xs text-amber-800 dark:text-amber-300 space-y-1">
+                    <span className="font-bold flex items-center gap-1.5">
+                      ⚠️ {t("minDeliveryDepositWarningTitle")}
+                    </span>
+                    <p className="text-[11px] leading-relaxed">
+                      {lang === "bn"
+                        ? `ন্যূনতম ডেলিভারি ডিপোজিট ${minDeliveryDeposit} টাকা। আপনার নির্ধারিত ডেলিভারি চার্জ (${charge} টাকা) এর চেয়ে কম হওয়ায় রিটার্ন ও ডেলিভারি খরচের সুরক্ষার্থে ক্রেতা এসক্রোতে ${minDeliveryDeposit} টাকা জমা করবেন।`
+                        : `The platform minimum delivery deposit is ${minDeliveryDeposit} BDT. Since your delivery charge (${charge} BDT) is below this, the buyer will deposit ${minDeliveryDeposit} BDT into escrow to ensure return shipping coverage.`}
+                    </p>
+                  </div>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="courier-name-select">{t("courierName")}</label>
@@ -320,28 +378,55 @@ export default function CreateDealPage() {
                   <span className="font-mono font-medium">{charge.toLocaleString()} BDT</span>
                 </div>
               )}
-              <div className="flex justify-between border-t border-neutral-300 dark:border-neutral-700 pt-2 font-bold text-base text-emerald-600 dark:text-emerald-400">
+
+              {/* Breakdown for Buyer */}
+              <div className="pt-2 border-t border-neutral-200 dark:border-neutral-800 text-xs space-y-2">
+                <div className="font-bold uppercase tracking-wider text-neutral-700 dark:text-neutral-300">
+                  {t("payNowIntoEscrow")}:
+                </div>
+                <div className="flex justify-between items-center text-neutral-600 dark:text-neutral-400 pl-2">
+                  <span>{isDeliveryOnly ? (lang === "bn" ? "ডেলিভারি ডিপোজিট (হোল্ড):" : "Delivery Deposit (Held):") : (lang === "bn" ? "পণ্য + ডেলিভারি:" : "Product + Shipping:")}</span>
+                  <span className="font-mono font-medium">{heldDeposit.toLocaleString()} BDT</span>
+                </div>
+                <div className="flex justify-between items-center text-accent pl-2">
+                  <span>{lang === "bn" ? `এসক্রো ফি (${formatFeePercent(lang)}):` : `Escrow Fee (${formatFeePercent(lang)}):`}</span>
+                  <span className="font-mono font-bold">+{escrowFee.toLocaleString()} BDT</span>
+                </div>
+                <div className="flex justify-between items-center font-bold text-neutral-900 dark:text-neutral-100 pl-2 pt-1 border-t border-dashed border-neutral-300 dark:border-neutral-700">
+                  <span>{lang === "bn" ? "ক্রেতার মোট অগ্রিম জমা:" : "Total Buyer Escrow Deposit:"}</span>
+                  <span className="font-mono text-accent font-extrabold">{totalBuyerDeposit.toLocaleString()} BDT</span>
+                </div>
+
+                {isDeliveryOnly && codAmount > 0 && (
+                  <div className="pt-2 border-t border-neutral-200 dark:border-neutral-800 space-y-1">
+                    <div className="font-bold uppercase tracking-wider text-neutral-700 dark:text-neutral-300">
+                      {t("payCashOnDelivery")}:
+                    </div>
+                    <div className="flex justify-between items-center font-bold text-neutral-800 dark:text-neutral-200 pl-2">
+                      <span>{lang === "bn" ? "ডোরস্টেপে কুরিয়ারকে প্রদেয়:" : "Due to Courier (COD):"}</span>
+                      <span className="font-mono font-bold">{codAmount.toLocaleString()} BDT</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Seller Payout */}
+              <div className="flex justify-between border-t border-neutral-300 dark:border-neutral-700 pt-3 font-bold text-base text-emerald-600 dark:text-emerald-400">
                 <span>{lang === "bn" ? "আপনার মোট পাওনা:" : t("sellerPayout") + ":"}</span>
                 <span className="font-mono">{sellerPayout.toLocaleString()} BDT</span>
-              </div>
-              <div className="pt-2 border-t border-neutral-200 dark:border-neutral-800 text-xs space-y-1.5 text-neutral-600 dark:text-neutral-400">
-                <div className="flex justify-between items-center text-accent">
-                  <span>{lang === "bn" ? `ক্রেতার এসক্রো চার্জ (${formatFeePercent(lang)}):` : `Buyer Escrow Fee (${formatFeePercent(lang)}):`}</span>
-                  <span className="font-mono font-bold">+{calculateFee(sellerPayout).toLocaleString()} BDT</span>
-                </div>
-                <div className="flex justify-between items-center font-semibold text-neutral-800 dark:text-neutral-200">
-                  <span>{lang === "bn" ? "ক্রেতার মোট ডিপোজিট:" : "Total Buyer Deposit:"}</span>
-                  <span className="font-mono">{(sellerPayout + calculateFee(sellerPayout)).toLocaleString()} BDT</span>
-                </div>
               </div>
             </div>
 
             <div className="p-3 border border-emerald-500/30 bg-emerald-50/50 dark:bg-emerald-950/20 text-xs text-emerald-800 dark:text-emerald-300 space-y-1">
-              <strong className="block">✓ {lang === "bn" ? "১০০% বিক্রেতা পাওনা (০% ফি)" : "100% Payout (0% Seller Fee)"}</strong>
+              <strong className="block">✓ {lang === "bn" ? "সম্পূর্ণ পাওনা নিশ্চয়তা" : "Full Payout Guarantee"}</strong>
               <p className="text-[11px] leading-relaxed">
                 {lang === "bn"
-                  ? "আপনার নির্ধারিত মূল্য থেকে কোনো প্ল্যাটফর্ম ফি কাটা হবে না। ডেলিভারি সম্পন্ন হলে আপনি সম্পূর্ণ টাকা বুঝে পাবেন। ক্রেতা পেমেন্টের সময় এসক্রো চার্জ বহন করবেন।"
-                  : "0% fee is deducted from your payout. You will receive 100% of your listed price and delivery charge."}
+                  ? isDeliveryOnly
+                    ? "ডেলিভারি সম্পন্ন হলে কুরিয়ার থেকে পণ্যের মূল্য এবং এসক্রো থেকে ডেলিভারি ডিপোজিট বুঝে পাবেন। এসক্রো ফি ক্রেতা বহন করেন।"
+                    : "ডেলিভারি সম্পন্ন হলে আপনি সম্পূর্ণ টাকা বুঝে পাবেন। এসক্রো ফি ক্রেতা বহন করেন।"
+                  : isDeliveryOnly
+                    ? "Upon delivery, collect the product price from courier COD and receive the delivery deposit from escrow. Escrow fees are paid by the buyer."
+                    : "You will receive your full agreed payout upon successful delivery. Platform escrow fees are paid by the buyer."}
               </p>
             </div>
           </div>

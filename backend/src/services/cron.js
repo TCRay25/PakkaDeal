@@ -20,7 +20,7 @@ async function runTasks() {
   if (isRunning) return;
   isRunning = true;
   try {
-    // 1. Check auto-release 24-hour timers and shipping timeouts
+    // 1. Check auto-release timers, shipping timeouts, and refusal review timeouts
     await checkAllTimeouts();
 
     // 2. Poll courier providers for active shipments

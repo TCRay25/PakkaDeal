@@ -8,6 +8,7 @@ import { addLedger, calculateFee } from "../services/settle.js";
 import { bumpBuyer, bumpSeller } from "../services/trust.js";
 import { log, notify, notifySeller } from "../services/events.js";
 import { emitToAdmin, emitToDeal } from "../services/socket.js";
+import { computeAmounts } from "../services/amounts.js";
 
 const router = Router();
 const upload = multer({
@@ -28,7 +29,7 @@ router.post("/deals/:code/dispute", auth, upload.single("photo"), async (req, re
   const isSeller = Number(req.user.id) === Number(deal.seller_id);
 
   if (!isBuyer && !isSeller) fail(403, "Only the buyer or seller can dispute this deal");
-  if (!["held", "shipped", "delivered", "return_requested", "return_shipped"].includes(deal.status)) {
+  if (!["held", "shipped", "delivered", "return_requested", "return_shipped", "refused"].includes(deal.status)) {
     fail(400, "This deal cannot be disputed in status: " + deal.status);
   }
 
@@ -64,7 +65,7 @@ router.post("/deals/:code/dispute", auth, upload.single("photo"), async (req, re
     ]
   );
 
-  await q(`update deals set status='disputed', outcome='disputed', updated_at=CURRENT_TIMESTAMP where id=$1`, [deal.id]);
+  await q(`update deals set status='disputed', outcome='disputed', auto_release_paused=1, updated_at=CURRENT_TIMESTAMP where id=$1`, [deal.id]);
   await log(deal.id, "disputed", `Dispute opened by ${isBuyer ? "Buyer" : "Seller"}: ${reason}`);
   emitToAdmin("admin:dispute_opened", {
     disputeId: dispute.id,
@@ -176,9 +177,17 @@ router.post("/disputes/:id/decide", auth, adminOnly, async (req, res) => {
         await notifySeller(deal.seller_id, `PakkaDeal #${deal.code}: Dispute concluded. Refund granted to buyer.`);
       }
     } else {
-      // Rejected: seller receives payout minus fee
-      const payout = deal.seller_payout || (deal.total_amount - deal.fee_amount);
-      const fee = deal.fee_amount || (await calculateFee(deal.total_amount));
+      // Rejected: seller receives held payout (deal.seller_payout), fee goes to platform_fee
+      const amounts = computeAmounts({
+        dealType: deal.deal_type,
+        mode: deal.payment_mode,
+        price: deal.price,
+        charge: deal.delivery_charge,
+        returnCharge: deal.return_charge,
+        feePercent: deal.fee_percent,
+      });
+      const payout = deal.seller_payout !== undefined && deal.seller_payout !== null ? deal.seller_payout : amounts.seller_payout;
+      const fee = deal.fee_amount !== undefined && deal.fee_amount !== null ? deal.fee_amount : amounts.fee_amount;
 
       const updatedDeal = await q(
         `update deals set status='released', outcome='dispute_rejected', updated_at=CURRENT_TIMESTAMP where id=$1 and status='disputed' returning *`,

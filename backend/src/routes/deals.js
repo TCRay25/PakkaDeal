@@ -2,12 +2,13 @@ import { Router } from "express";
 import { randomBytes } from "node:crypto";
 import multer from "multer";
 import { config } from "../config.js";
-import { one, q } from "../db.js";
+import { one, q, transaction } from "../db.js";
 import { adminOnly, auth, fail, isAdmin, optionalAuth } from "../http.js";
 import { PHONE } from "./auth.js";
 import { getBuyer, successRatio } from "../services/trust.js";
 import { scoreOrder } from "../services/risk.js";
 import { log, notify, notifySeller } from "../services/events.js";
+import { computeAmounts } from "../services/amounts.js";
 import {
   applyPayment,
   applyShip,
@@ -142,8 +143,29 @@ async function view(deal, user) {
   // Strip large raw buffers from JSON response
   const { buyer_phone, consignment_slip, unboxing_photo, ...rest } = deal;
 
+  const feePercent = Number(await getSetting("platform_fee_percent", 1));
+  const feeMin = Number(await getSetting("platform_fee_min", 10));
+  const minDeposit = Number(await getSetting("min_delivery_deposit", 60));
+
+  const amounts = computeAmounts({
+    dealType: deal.deal_type,
+    mode: deal.payment_mode,
+    price: deal.price,
+    charge: deal.delivery_charge,
+    returnCharge: deal.return_charge,
+    feePercent: deal.fee_percent || feePercent,
+    feeMin,
+    minDeposit,
+  });
+
   const dealView = {
     ...rest,
+    payment_mode: deal.payment_mode || (deal.deal_type === "product" ? "delivery_only" : "full_payment"),
+    held_amount: amounts.held_amount,
+    cod_amount: deal.cod_amount !== undefined && deal.cod_amount !== null ? deal.cod_amount : amounts.cod_amount,
+    total_amount: deal.total_amount || amounts.total_amount,
+    fee_amount: deal.fee_amount !== undefined && deal.fee_amount !== null ? deal.fee_amount : amounts.fee_amount,
+    seller_payout: deal.seller_payout !== undefined && deal.seller_payout !== null ? deal.seller_payout : amounts.seller_payout,
     has_consignment_slip: !!consignment_slip,
     has_unboxing_photo: !!unboxing_photo,
     buyer_phone: isParticipant ? buyer_phone : mask(buyer_phone),
@@ -263,11 +285,28 @@ router.post("/", auth, async (req, res) => {
   if (!(price > 0)) fail(400, "Amount must be greater than 0");
   if (b.buyer_phone === req.user.phone) fail(400, "You cannot create a deal with your own phone number");
 
-  const baseSubtotal = price + charge;
-  const feePercent = Number(await getSetting("platform_fee_percent", config.feePercent || 1));
-  const feeAmount = await calculateFee(baseSubtotal);
-  const totalAmount = baseSubtotal + feeAmount; // Buyer pays product + delivery + platform fee
-  const sellerPayout = baseSubtotal; // Seller receives full 100% of price + delivery (0 fee deducted from seller)
+  const paymentMode = b.payment_mode || "delivery_only";
+  if (dealType !== "product" && b.payment_mode === "delivery_only") {
+    fail(400, "Delivery-only payment mode is only available for product deals");
+  }
+  const effectiveMode = dealType === "product"
+    ? (paymentMode === "full_payment" ? "full_payment" : "delivery_only")
+    : "full_payment";
+
+  const feePercent = Number(await getSetting("platform_fee_percent", 1));
+  const feeMin = Number(await getSetting("platform_fee_min", 10));
+  const minDeposit = Number(await getSetting("min_delivery_deposit", 60));
+
+  const amounts = computeAmounts({
+    dealType,
+    mode: effectiveMode,
+    price,
+    charge,
+    returnCharge,
+    feePercent,
+    feeMin,
+    minDeposit,
+  });
 
   const buyer = await getBuyer(b.buyer_phone);
   const hourBd = (new Date().getUTCHours() + 6) % 24;
@@ -287,15 +326,17 @@ router.post("/", auth, async (req, res) => {
 
   const deal = await one(
     `insert into deals(
-       code, deal_type, seller_id, buyer_id, buyer_phone, buyer_name, address, area, product, details,
+       code, deal_type, payment_mode, cod_amount, seller_id, buyer_id, buyer_phone, buyer_name, address, area, product, details,
        price, delivery_charge, total_amount, fee_amount, fee_percent, seller_payout, deposit,
        return_policy, return_charge, status, courier_name, risk_score, risk_reasons, buyer_trust
      ) values(
-       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
+       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26
      ) returning *`,
     [
       code,
       dealType,
+      effectiveMode,
+      amounts.cod_amount,
       req.user.id,
       buyerId,
       b.buyer_phone.trim(),
@@ -306,11 +347,11 @@ router.post("/", auth, async (req, res) => {
       (b.details || "").trim(),
       price,
       charge,
-      totalAmount,
-      feeAmount,
+      amounts.total_amount,
+      amounts.fee_amount,
       feePercent,
-      sellerPayout,
-      totalAmount,
+      amounts.seller_payout,
+      amounts.total_amount,
       returnPolicy,
       returnCharge,
       "created",
@@ -329,7 +370,7 @@ router.post("/", auth, async (req, res) => {
 
   await notify(
     deal.buyer_phone,
-    `PakkaDeal: ${req.user.page_name || req.user.name} invited you to deal #${deal.code} for "${deal.product}". Total: ${totalAmount} BDT (including ${feePercent}% escrow fee). Pay into escrow to proceed.`,
+    `PakkaDeal: ${req.user.page_name || req.user.name} invited you to deal #${deal.code} for "${deal.product}". Total: ${deal.total_amount} BDT (including ${feePercent}% escrow fee). Pay into escrow to proceed.`,
     "New Deal Invitation",
     deal.code
   );
@@ -351,6 +392,8 @@ router.get("/:code", optionalAuth, async (req, res) => {
       deal: {
         code: deal.code,
         deal_type: deal.deal_type,
+        payment_mode: deal.payment_mode,
+        cod_amount: deal.cod_amount,
         product: deal.product,
         total_amount: deal.total_amount,
         status: deal.status,
@@ -390,6 +433,81 @@ router.post(["/:code/open", "/:code/payment-pending"], auth, async (req, res) =>
   }
 
   res.json(await view(deal, req.user));
+});
+
+router.post("/:code/payment-mode", auth, async (req, res) => {
+  let deal = await loadDeal(req.params.code);
+
+  if (!deal.buyer_id && req.user.phone === deal.buyer_phone) {
+    deal.buyer_id = req.user.id;
+    await q("update deals set buyer_id=$1 where id=$2", [req.user.id, deal.id]);
+  }
+
+  const isBuyerUser = Number(req.user.id) === Number(deal.buyer_id);
+  const isAdminUser = isAdmin(req.user);
+
+  if (!isBuyerUser && !isAdminUser) {
+    fail(403, "Only the buyer of this deal can change the payment mode");
+  }
+
+  if (!["created", "payment_pending"].includes(deal.status)) {
+    fail(400, "Payment mode can only be changed while deal is created or payment_pending");
+  }
+
+  if (deal.deal_type !== "product") {
+    fail(400, "Payment mode can only be changed for physical product deals");
+  }
+
+  const newMode = (req.body.payment_mode || "").trim();
+  if (!["delivery_only", "full_payment"].includes(newMode)) {
+    fail(400, "Invalid payment mode. Must be 'delivery_only' or 'full_payment'");
+  }
+
+  const feePercent = Number(await getSetting("platform_fee_percent", 1));
+  const feeMin = Number(await getSetting("platform_fee_min", 10));
+  const minDeposit = Number(await getSetting("min_delivery_deposit", 60));
+
+  const amounts = computeAmounts({
+    dealType: deal.deal_type,
+    mode: newMode,
+    price: deal.price,
+    charge: deal.delivery_charge,
+    returnCharge: deal.return_charge,
+    feePercent: deal.fee_percent || feePercent,
+    feeMin,
+    minDeposit,
+  });
+
+  const updatedDeal = await transaction(async () => {
+    const updated = await q(
+      `update deals set
+         payment_mode=$2,
+         cod_amount=$3,
+         total_amount=$4,
+         fee_amount=$5,
+         seller_payout=$6,
+         deposit=$4,
+         updated_at=CURRENT_TIMESTAMP
+       where id=$1 and status in ('created', 'payment_pending')
+       returning *`,
+      [deal.id, newMode, amounts.cod_amount, amounts.total_amount, amounts.fee_amount, amounts.seller_payout]
+    );
+
+    if (updated.length !== 1) {
+      fail(400, "Failed to update payment mode (deal may have already progressed)");
+    }
+
+    await log(
+      deal.id,
+      "payment_mode_changed",
+      `Buyer switched payment mode to '${newMode}'. Escrow deposit: ${amounts.total_amount} BDT, COD at delivery: ${amounts.cod_amount} BDT.`,
+      { actor: "buyer" }
+    );
+
+    return updated[0];
+  });
+
+  res.json(await view(updatedDeal, req.user));
 });
 
 router.post("/:code/pay", auth, async (req, res) => {

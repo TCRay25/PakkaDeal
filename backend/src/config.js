@@ -30,8 +30,6 @@ export const config = {
   webhookKey,
   shipWithinHours: Number(process.env.SHIP_WITHIN_HOURS || 48),
   confirmWithinHours: Number(process.env.CONFIRM_WITHIN_HOURS || 72),
-  feePercent: Number(process.env.FEE_PERCENT || 1),
-  feeMin: Number(process.env.FEE_MIN || 10),
   geminiKey: process.env.GEMINI_API_KEY || "",
   geminiModel: process.env.GEMINI_MODEL || "gemini-2.0-flash",
 };
