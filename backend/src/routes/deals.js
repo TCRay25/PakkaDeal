@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import multer from "multer";
 import { config } from "../config.js";
 import { one, q } from "../db.js";
-import { auth, fail, optionalAuth, makeToken } from "../http.js";
+import { adminOnly, auth, fail, isAdmin, optionalAuth } from "../http.js";
 import { PHONE } from "./auth.js";
 import { getBuyer, successRatio } from "../services/trust.js";
 import { scoreOrder } from "../services/risk.js";
@@ -17,7 +17,6 @@ import {
   requestReturn,
   shipReturn,
   completeReturn,
-  checkAllTimeouts,
   calculateFee,
   getSetting,
 } from "../services/settle.js";
@@ -42,11 +41,18 @@ const upload = multer({
 
 export async function loadDeal(codeOrId) {
   try {
-    const deal = await one(
+    let deal = await one(
       "select * from deals where code=$1 or id=$2",
       [String(codeOrId), Number(codeOrId) || 0]
     );
     if (!deal) fail(404, "Deal not found");
+    if (!deal.buyer_id && deal.buyer_phone) {
+      const buyer = await one("select id from users where phone=$1", [deal.buyer_phone]);
+      if (buyer?.id) {
+        await q("update deals set buyer_id=$1 where id=$2", [buyer.id, deal.id]);
+        deal.buyer_id = buyer.id;
+      }
+    }
     return deal;
   } catch (err) {
     if (err.message && err.message.includes('column "updated_at" of relation "deals" does not exist')) {
@@ -54,11 +60,18 @@ export async function loadDeal(codeOrId) {
         await q("alter table deals add column if not exists updated_at timestamptz not null default now()");
         await q("alter table deals add column if not exists created_at timestamptz not null default now()");
         await q("alter table deals add column if not exists buyer_id int");
-        const deal = await one(
+        let deal = await one(
           "select * from deals where code=$1 or id=$2",
           [String(codeOrId), Number(codeOrId) || 0]
         );
         if (!deal) fail(404, "Deal not found");
+        if (!deal.buyer_id && deal.buyer_phone) {
+          const buyer = await one("select id from users where phone=$1", [deal.buyer_phone]);
+          if (buyer?.id) {
+            await q("update deals set buyer_id=$1 where id=$2", [buyer.id, deal.id]);
+            deal.buyer_id = buyer.id;
+          }
+        }
         return deal;
       } catch (innerErr) {
         throw err;
@@ -68,11 +81,35 @@ export async function loadDeal(codeOrId) {
   }
 }
 
+function toBase32(buffer) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let bits = 0;
+  let value = 0;
+  let output = "";
+  for (let i = 0; i < buffer.length; i++) {
+    value = (value << 8) | buffer[i];
+    bits += 8;
+    while (bits >= 5) {
+      output += alphabet[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+  if (bits > 0) {
+    output += alphabet[(value << (5 - bits)) & 31];
+  }
+  return output;
+}
+
 const mask = (p) => (p && p.length >= 7 ? p.slice(0, 3) + "****" + p.slice(-3) : p);
 
 async function view(deal, user) {
+  const isSeller = !!user && Number(user.id) === Number(deal.seller_id);
+  const isBuyer = !!user && Number(user.id) === Number(deal.buyer_id);
+  const isAdminUser = !!user && isAdmin(user);
+  const isParticipant = isSeller || isBuyer || isAdminUser;
+
   const seller = await one(
-    "select id, name, phone, page_name, page_url, seller_trust from users where id=$1",
+    "select id, public_id, name, phone, page_name, page_url, seller_trust from users where id=$1",
     [deal.seller_id]
   );
   const buyer = await getBuyer(deal.buyer_phone);
@@ -89,17 +126,6 @@ async function view(deal, user) {
     [deal.id]
   );
   const tracking = deal.tracking_id ? await getDealTrackingTimeline(deal.id) : null;
-
-  const userPhone11 = user?.phone ? user.phone.replace(/\D/g, "").slice(-11) : "";
-  const dealBuyerPhone11 = deal.buyer_phone ? deal.buyer_phone.replace(/\D/g, "").slice(-11) : "";
-  const sellerPhone11 = seller?.phone ? seller.phone.replace(/\D/g, "").slice(-11) : "";
-
-  const isSeller = !!user && (Number(user.id) === Number(deal.seller_id) || (userPhone11 && userPhone11 === sellerPhone11));
-  const isBuyer = !!user && (
-    (deal.buyer_id && Number(user.id) === Number(deal.buyer_id)) ||
-    (userPhone11 && userPhone11 === dealBuyerPhone11)
-  );
-  const isAdminUser = !!user && config.adminPhones.includes(user.phone);
 
   const escrowAccounts = {
     bkash: await getSetting("escrow_bkash_merchant", "01711-000000"),
@@ -120,7 +146,7 @@ async function view(deal, user) {
     ...rest,
     has_consignment_slip: !!consignment_slip,
     has_unboxing_photo: !!unboxing_photo,
-    buyer_phone: isSeller || isBuyer || isAdminUser ? buyer_phone : mask(buyer_phone),
+    buyer_phone: isParticipant ? buyer_phone : mask(buyer_phone),
   };
 
   // If the viewer is the seller, they do NOT see the buyer's escrow service fee
@@ -129,18 +155,28 @@ async function view(deal, user) {
     dealView.fee_percent = 0;
   }
 
+  const sellerView = {
+    id: seller ? (seller.public_id || seller.id) : null,
+    public_id: seller ? (seller.public_id || String(seller.id)) : null,
+    name: seller?.name || "",
+    page_name: seller?.page_name || "",
+    page_url: seller?.page_url || "",
+    seller_trust: seller?.seller_trust ?? 70,
+    ...(isParticipant && seller?.phone ? { phone: seller.phone } : {}),
+  };
+
   return {
     deal: dealView,
-    seller,
+    seller: sellerView,
     buyer: {
-      phone: isSeller || isBuyer || isAdminUser ? deal.buyer_phone : mask(deal.buyer_phone),
+      phone: isParticipant ? deal.buyer_phone : mask(deal.buyer_phone),
       name: deal.buyer_name,
       trust_score: buyer.trust_score,
       delivered: buyer.delivered,
       refused: buyer.refused,
     },
     events,
-    ledger: isSeller || isBuyer || isAdminUser ? ledgerEntries : [],
+    ledger: isParticipant ? ledgerEntries : [],
     dispute: dispute || null,
     tracking: tracking || null,
     me: {
@@ -154,7 +190,6 @@ async function view(deal, user) {
 
 router.get("/", auth, async (req, res) => {
   const { status, type, role, q: search } = req.query;
-  await checkAllTimeouts();
 
   const userPhone11 = (req.user.phone || "").replace(/\D/g, "").slice(-11);
 
@@ -245,20 +280,24 @@ router.post("/", auth, async (req, res) => {
     newBuyer: (buyer.delivered || 0) + (buyer.refused || 0) === 0,
   });
 
-  const code = "PK-" + randomBytes(4).toString("hex").toUpperCase();
+  const code = toBase32(randomBytes(9));
+
+  const existingBuyer = await one("select id from users where phone = $1", [b.buyer_phone.trim()]);
+  const buyerId = existingBuyer?.id || null;
 
   const deal = await one(
     `insert into deals(
-       code, deal_type, seller_id, buyer_phone, buyer_name, address, area, product, details,
+       code, deal_type, seller_id, buyer_id, buyer_phone, buyer_name, address, area, product, details,
        price, delivery_charge, total_amount, fee_amount, fee_percent, seller_payout, deposit,
        return_policy, return_charge, status, courier_name, risk_score, risk_reasons, buyer_trust
      ) values(
-       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
+       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
      ) returning *`,
     [
       code,
       dealType,
       req.user.id,
+      buyerId,
       b.buyer_phone.trim(),
       b.buyer_name.trim(),
       b.address.trim(),
@@ -299,19 +338,49 @@ router.post("/", auth, async (req, res) => {
 });
 
 router.get("/:code", optionalAuth, async (req, res) => {
-  await checkAllTimeouts();
+  const deal = await loadDeal(req.params.code);
+
+  if (!req.user) {
+    const seller = await one(
+      "select id, public_id, name, page_name, seller_trust from users where id=$1",
+      [deal.seller_id]
+    );
+    return res.json({
+      invite: true,
+      requires_auth: true,
+      deal: {
+        code: deal.code,
+        deal_type: deal.deal_type,
+        product: deal.product,
+        total_amount: deal.total_amount,
+        status: deal.status,
+        created_at: deal.created_at,
+      },
+      seller: {
+        id: seller ? (seller.public_id || seller.id) : null,
+        public_id: seller ? (seller.public_id || String(seller.id)) : null,
+        name: seller?.name || "",
+        page_name: seller?.page_name || "",
+        seller_trust: seller?.seller_trust ?? 70,
+      },
+      message: "Please sign in to view full deal details",
+    });
+  }
+
+  res.json(await view(deal, req.user));
+});
+
+router.post(["/:code/open", "/:code/payment-pending"], auth, async (req, res) => {
   let deal = await loadDeal(req.params.code);
+  const isBuyerUser = Number(req.user.id) === Number(deal.buyer_id);
+  const isAdminUser = isAdmin(req.user);
 
-  // Transition from created -> payment_pending when designated buyer views the link
-  const userPhone11 = req.user?.phone ? req.user.phone.replace(/\D/g, "").slice(-11) : "";
-  const dealBuyerPhone11 = deal.buyer_phone ? deal.buyer_phone.replace(/\D/g, "").slice(-11) : "";
-  const isBuyerUser = req.user && (
-    (deal.buyer_id && Number(req.user.id) === Number(deal.buyer_id)) ||
-    (userPhone11 && userPhone11 === dealBuyerPhone11)
-  );
+  if (!isBuyerUser && !isAdminUser) {
+    fail(403, "Only the designated buyer can open or acknowledge this deal");
+  }
 
-  if (isBuyerUser && deal.status === "created") {
-    await q("update deals set status='payment_pending', updated_at=CURRENT_TIMESTAMP where id=$1", [deal.id]);
+  if (deal.status === "created") {
+    await q("update deals set status='payment_pending', updated_at=CURRENT_TIMESTAMP where id=$1 and status='created'", [deal.id]);
     await log(deal.id, "payment_pending", "Buyer opened deal link. Awaiting escrow payment.", {
       fromStatus: "created",
       toStatus: "payment_pending",
@@ -323,33 +392,29 @@ router.get("/:code", optionalAuth, async (req, res) => {
   res.json(await view(deal, req.user));
 });
 
-router.post("/:code/pay", optionalAuth, async (req, res) => {
+router.post("/:code/pay", auth, async (req, res) => {
   const deal = await loadDeal(req.params.code);
   if (!["created", "payment_pending"].includes(deal.status)) {
     fail(400, "Deal cannot be paid in status: " + deal.status);
   }
 
-  const seller = await one("select id, phone from users where id=$1", [deal.seller_id]);
-  const userPhone11 = req.user?.phone ? req.user.phone.replace(/\D/g, "").slice(-11) : "";
-  const sellerPhone11 = seller?.phone ? seller.phone.replace(/\D/g, "").slice(-11) : "";
-
-  // STRICT BUSINESS LOGIC: Seller CANNOT pay for their own deal!
-  if (
-    req.user && (
-      Number(req.user.id) === Number(deal.seller_id) ||
-      (userPhone11 && userPhone11 === sellerPhone11)
-    )
-  ) {
-    fail(403, "আপনি এই ডিলের বিক্রেতা (Seller)। বিক্রেতা নিজের তৈরি করা ডিলে নিজে পেমেন্ট করতে পারবেন না। পেমেন্ট অবশ্যই বায়ার (ক্রেতা) কর্তৃক হতে হবে। লিংকটি বায়ারকে পাঠান।");
+  // Caller must be the deal's buyer by user.id
+  if (Number(req.user.id) !== Number(deal.buyer_id)) {
+    fail(403, "Only the buyer can pay for this deal");
   }
 
   const paymentMethod = (req.body.payment_method || "bKash").trim();
-  const senderNumber = (req.body.sender_number || req.user?.phone || deal.buyer_phone).trim();
-  const trxId = (req.body.trx_id || `MOCK-${Date.now().toString(36).toUpperCase()}`).trim();
+  const senderNumber = (req.body.sender_number || req.user.phone || "").trim();
+  const trxId = (req.body.trx_id || req.body.trxId || "").trim();
+
+  if (!trxId) {
+    fail(400, "Transaction ID (TrxID) is required");
+  }
+
   const amountPaid = Math.round(Number(req.body.amount || deal.total_amount));
   const cleanTrxId = trxId.toUpperCase();
 
-  if (senderNumber && !PHONE.test(senderNumber)) {
+  if (!senderNumber || !PHONE.test(senderNumber)) {
     fail(400, "Please provide a valid 11-digit sender phone number");
   }
 
@@ -362,82 +427,52 @@ router.post("/:code/pay", optionalAuth, async (req, res) => {
     fail(400, `এই TrxID (${cleanTrxId}) ইতিমধ্যে #${duplicate.code} নম্বর ডিলে ব্যবহার করা হয়েছে। অন্য TrxID দিন।`);
   }
 
-  // Ensure buyer user exists in `users` table
-  let buyerUser = req.user && Number(req.user.id) !== Number(deal.seller_id) ? req.user : null;
-  if (!buyerUser) {
-    buyerUser = await one("select * from users where phone=$1 or phone=$2", [deal.buyer_phone, senderNumber]);
-  }
-  if (!buyerUser) {
-    buyerUser = await one(
-      `insert into users(phone, name, role, page_name, seller_trust, buyer_trust)
-       values($1, $2, 'buyer', '', 60, 60) returning *`,
-      [deal.buyer_phone || senderNumber, deal.buyer_name || "Buyer " + (deal.buyer_phone || senderNumber).slice(-4)]
-    );
-  }
+  // Escrow flow: submits to Pending Payments for admin verification
+  // A deal can ONLY become 'held' via admin payment confirmation!
+  await q(
+    `update deals set
+       status = 'payment_pending',
+       payment_status = 'pending',
+       payment_method = $2,
+       payment_sender = $3,
+       payment_trx_id = $4,
+       payment_amount = $5,
+       payment_submitted_at = CURRENT_TIMESTAMP,
+       updated_at = CURRENT_TIMESTAMP
+     where id = $1`,
+    [deal.id, paymentMethod, senderNumber, cleanTrxId, amountPaid]
+  );
 
-  // Link buyer_id on deal so buyer always sees it in their dashboard
-  if (buyerUser?.id) {
-    await q("update deals set buyer_id=$1 where id=$2", [buyerUser.id, deal.id]);
-    deal.buyer_id = buyerUser.id;
-  }
+  await log(
+    deal.id,
+    "payment_submitted",
+    `Buyer submitted payment via ${paymentMethod} (${amountPaid} BDT, TrxID: ${cleanTrxId}, Sender: ${senderNumber}). Awaiting admin verification.`,
+    {
+      fromStatus: deal.status,
+      toStatus: "payment_pending",
+      actor: "buyer",
+    }
+  );
 
-  const isSimulated = req.query.simulate === "true" || req.body.simulate === true;
-  let updated;
+  await notify(
+    deal.buyer_phone,
+    `PakkaDeal #${deal.code}: আপনার পেমেন্ট সাবমিশন গৃহীত হয়েছে (TrxID: ${cleanTrxId}, ${amountPaid.toLocaleString()} BDT)। অ্যাডমিন ভেরিফিকেশন সম্পন্ন হলে ফান্ড এসক্রোতে লক হবে।`,
+    "Payment Submitted",
+    deal.code
+  );
 
-  if (isSimulated) {
-    // Direct simulation moves immediately to held
-    updated = await applyPayment(deal, { paymentMethod, senderNumber, trxId: cleanTrxId });
-  } else {
-    // Normal escrow flow: submits to Pending Payments for admin verification
-    await q(
-      `update deals set
-         status = 'payment_pending',
-         payment_status = 'pending',
-         payment_method = $2,
-         payment_sender = $3,
-         payment_trx_id = $4,
-         payment_amount = $5,
-         payment_submitted_at = CURRENT_TIMESTAMP,
-         updated_at = CURRENT_TIMESTAMP
-       where id = $1`,
-      [deal.id, paymentMethod, senderNumber, cleanTrxId, amountPaid]
-    );
+  await notifySeller(
+    deal.seller_id,
+    `PakkaDeal #${deal.code}: ক্রেতা পেমেন্ট সাবমিট করেছেন (TrxID: ${cleanTrxId})। অ্যাডমিন ভেরিফিকেশন সম্পন্ন হওয়া মাত্র পার্সেল পাঠানোর নির্দেশনা পাবেন।`,
+    "Payment Submitted by Buyer",
+    deal.code
+  );
 
-    await log(
-      deal.id,
-      "payment_submitted",
-      `Buyer submitted payment via ${paymentMethod} (${amountPaid} BDT, TrxID: ${cleanTrxId}, Sender: ${senderNumber}). Awaiting admin verification.`,
-      {
-        fromStatus: deal.status,
-        toStatus: "payment_pending",
-        actor: "buyer",
-      }
-    );
+  const updated = await one("select * from deals where id=$1", [deal.id]);
+  const viewData = await view(updated, req.user);
 
-    await notify(
-      deal.buyer_phone,
-      `PakkaDeal #${deal.code}: আপনার পেমেন্ট সাবমিশন গৃহীত হয়েছে (TrxID: ${cleanTrxId}, ${amountPaid.toLocaleString()} BDT)। অ্যাডমিন ভেরিফিকেশন সম্পন্ন হলে ফান্ড এসক্রোতে লক হবে।`,
-      "Payment Submitted",
-      deal.code
-    );
-
-    await notifySeller(
-      deal.seller_id,
-      `PakkaDeal #${deal.code}: ক্রেতা পেমেন্ট সাবমিট করেছেন (TrxID: ${cleanTrxId})। অ্যাডমিন ভেরিফিকেশন সম্পন্ন হওয়া মাত্র পার্সেল পাঠানোর নির্দেশনা পাবেন।`,
-      "Payment Submitted by Buyer",
-      deal.code
-    );
-
-    updated = await one("select * from deals where id=$1", [deal.id]);
-  }
-
-  const viewData = await view(updated, req.user || buyerUser);
-  const token = req.user ? null : makeToken(buyerUser.id);
-
-  res.json({
-    ...viewData,
-    token,
-  });
+  // Must never return a token
+  res.json(viewData);
 });
 
 /** Delete unpaid deal (Seller or Admin only, before payment is deposited) */
@@ -563,7 +598,7 @@ router.post("/:code/confirm", auth, upload.single("unboxing_photo"), async (req,
   const unboxingPhotoType = req.file?.mimetype || "";
 
   if (deal.deal_type === "product") {
-    if (req.user.phone !== deal.buyer_phone) fail(403, "Only the buyer can confirm product receipt");
+    if (Number(req.user.id) !== Number(deal.buyer_id)) fail(403, "Only the buyer can confirm product receipt");
     if (deal.status !== "delivered") fail(400, "Product must be marked delivered before confirmation");
 
     const updated = await releaseToSeller(deal, "buyer_confirmed", "buyer", {
@@ -580,7 +615,7 @@ router.post("/:code/confirm", auth, upload.single("unboxing_photo"), async (req,
 
 router.post("/:code/request-return", auth, async (req, res) => {
   const deal = await loadDeal(req.params.code);
-  if (req.user.phone !== deal.buyer_phone) fail(403, "Only the buyer can request a return");
+  if (Number(req.user.id) !== Number(deal.buyer_id)) fail(403, "Only the buyer can request a return");
   if (deal.status !== "delivered") fail(400, "Returns can only be requested after delivery");
   if (deal.return_policy === "no_returns") fail(400, "This deal has a no-return policy");
 
@@ -591,7 +626,7 @@ router.post("/:code/request-return", auth, async (req, res) => {
 
 router.post("/:code/ship-return", auth, async (req, res) => {
   const deal = await loadDeal(req.params.code);
-  if (req.user.phone !== deal.buyer_phone) fail(403, "Only the buyer can ship return");
+  if (Number(req.user.id) !== Number(deal.buyer_id)) fail(403, "Only the buyer can ship return");
   if (deal.status !== "return_requested") fail(400, "Return has not been requested for this deal");
 
   const trackingId = (req.body.return_tracking_id || "").trim();
@@ -613,20 +648,41 @@ router.post("/:code/confirm-return", auth, async (req, res) => {
   res.json(await view(updated, req.user));
 });
 
-router.get("/:code/consignment-slip", async (req, res) => {
-  const deal = await one("select consignment_slip, consignment_slip_type from deals where code=$1", [req.params.code]);
+router.get("/:code/consignment-slip", auth, async (req, res) => {
+  const deal = await loadDeal(req.params.code);
+  const isSeller = Number(req.user.id) === Number(deal.seller_id);
+  const isBuyer = Number(req.user.id) === Number(deal.buyer_id);
+  const isAdminUser = isAdmin(req.user);
+
+  if (!isSeller && !isBuyer && !isAdminUser) {
+    fail(403, "Access denied: only deal participants or admin can view consignment slip");
+  }
+
   if (!deal?.consignment_slip) fail(404, "No consignment slip found");
+  res.set("X-Content-Type-Options", "nosniff");
   res.type(deal.consignment_slip_type || "image/jpeg").send(deal.consignment_slip);
 });
 
-router.get("/:code/unboxing-photo", async (req, res) => {
-  const deal = await one("select unboxing_photo, unboxing_photo_type from deals where code=$1", [req.params.code]);
+router.get("/:code/unboxing-photo", auth, async (req, res) => {
+  const deal = await loadDeal(req.params.code);
+  const isSeller = Number(req.user.id) === Number(deal.seller_id);
+  const isBuyer = Number(req.user.id) === Number(deal.buyer_id);
+  const isAdminUser = isAdmin(req.user);
+
+  if (!isSeller && !isBuyer && !isAdminUser) {
+    fail(403, "Access denied: only deal participants or admin can view unboxing photo");
+  }
+
   if (!deal?.unboxing_photo) fail(404, "No unboxing photo found");
+  res.set("X-Content-Type-Options", "nosniff");
   res.type(deal.unboxing_photo_type || "image/jpeg").send(deal.unboxing_photo);
 });
 
-/** Demo courier status simulation */
-router.post("/:code/simulate-courier", auth, async (req, res) => {
+/** Courier status simulation (allowed only in non-production for admin) */
+router.post("/:code/simulate-courier", auth, adminOnly, async (req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    fail(403, "Simulation endpoint disabled in production");
+  }
   const deal = await loadDeal(req.params.code);
   const status = req.body.status; // 'picked_up', 'in_transit', 'delivered', 'refused', 'returned'
   if (!["picked_up", "in_transit", "delivered", "refused", "returned"].includes(status)) {

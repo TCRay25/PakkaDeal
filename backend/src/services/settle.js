@@ -1,4 +1,4 @@
-import { one, q } from "../db.js";
+import { one, q, transaction } from "../db.js";
 import { bumpBuyer, bumpSeller } from "./trust.js";
 import { log, notify, notifySeller } from "./events.js";
 import { config } from "../config.js";
@@ -80,43 +80,50 @@ export async function applyPayment(deal, paymentOpts = "bKash") {
   const senderNumber = typeof paymentOpts === "object" ? (paymentOpts.senderNumber || deal.buyer_phone) : deal.buyer_phone;
   const trxId = typeof paymentOpts === "object" ? (paymentOpts.trxId || `TX-${Date.now().toString(36).toUpperCase()}`) : `TX-${Date.now().toString(36).toUpperCase()}`;
 
-  await q(
-    `update deals set
-       status='held', deposit=$2, ship_by=$3, payment_method=$4, payment_sender=$5, payment_trx_id=$6,
-       payment_status='confirmed', payment_amount=coalesce(nullif(payment_amount, 0), $2), updated_at=CURRENT_TIMESTAMP
-     where id=$1`,
-    [deal.id, deal.total_amount, shipBy, paymentMethod, senderNumber, trxId]
-  );
+  return await transaction(async () => {
+    const updated = await q(
+      `update deals set
+         status='held', deposit=$2, ship_by=$3, payment_method=$4, payment_sender=$5, payment_trx_id=$6,
+         payment_status='confirmed', payment_amount=coalesce(nullif(payment_amount, 0), $2), updated_at=CURRENT_TIMESTAMP
+       where id=$1 and status in ('created', 'payment_pending')
+       returning *`,
+      [deal.id, deal.total_amount, shipBy, paymentMethod, senderNumber, trxId]
+    );
 
-  await addLedger({
-    dealId: deal.id,
-    type: "hold",
-    amount: deal.total_amount,
-    partyPhone: senderNumber || deal.buyer_phone,
-    notes: `Escrow hold funded via ${paymentMethod} (Sender: ${senderNumber || deal.buyer_phone}, TrxID: ${trxId})`,
+    if (updated.length !== 1) {
+      return one("select * from deals where id=$1", [deal.id]);
+    }
+
+    await addLedger({
+      dealId: deal.id,
+      type: "hold",
+      amount: deal.total_amount,
+      partyPhone: senderNumber || deal.buyer_phone,
+      notes: `Escrow hold funded via ${paymentMethod} (Sender: ${senderNumber || deal.buyer_phone}, TrxID: ${trxId})`,
+    });
+
+    await log(deal.id, "paid", `Buyer deposited ${deal.total_amount} BDT into escrow via ${paymentMethod}. TrxID: ${trxId}, Sender: ${senderNumber || deal.buyer_phone}`, {
+      fromStatus: deal.status,
+      toStatus: "held",
+      actor: "buyer",
+    });
+
+    await notify(
+      deal.buyer_phone,
+      `PakkaDeal: Payment confirmed (${deal.total_amount} BDT) for deal #${deal.code}. TrxID: ${trxId}. Funds are safely held in PakkaDeal Escrow Vault.`,
+      "Escrow Payment Confirmed",
+      deal.code
+    );
+
+    await notifySeller(
+      deal.seller_id,
+      `PakkaDeal: Buyer has paid ${deal.total_amount} BDT into escrow for deal #${deal.code}. Buyer has paid, you can ship now within ${shipHours} hours.`,
+      "Buyer Paid – Ship Parcel Now",
+      deal.code
+    );
+
+    return updated[0];
   });
-
-  await log(deal.id, "paid", `Buyer deposited ${deal.total_amount} BDT into escrow via ${paymentMethod}. TrxID: ${trxId}, Sender: ${senderNumber || deal.buyer_phone}`, {
-    fromStatus: deal.status,
-    toStatus: "held",
-    actor: "buyer",
-  });
-
-  await notify(
-    deal.buyer_phone,
-    `PakkaDeal: Payment confirmed (${deal.total_amount} BDT) for deal #${deal.code}. TrxID: ${trxId}. Funds are safely held in PakkaDeal Escrow Vault.`,
-    "Escrow Payment Confirmed",
-    deal.code
-  );
-
-  await notifySeller(
-    deal.seller_id,
-    `PakkaDeal: Buyer has paid ${deal.total_amount} BDT into escrow for deal #${deal.code}. Buyer has paid, you can ship now within ${shipHours} hours.`,
-    "Buyer Paid – Ship Parcel Now",
-    deal.code
-  );
-
-  return one("select * from deals where id=$1", [deal.id]);
 }
 
 /** Seller dispatches courier (Steadfast, Pathao, RedX, Paperfly or Other/Manual) */
@@ -279,65 +286,73 @@ export async function applyCourier(deal, status) {
   }
 
   if (status === "refused" || status === "returned") {
-    // Buyer refused parcel at doorstep
-    await q(
-      `update deals set status='released', outcome='refused_at_door', courier_status='refused', updated_at=CURRENT_TIMESTAMP where id=$1`,
-      [deal.id]
-    );
+    return await transaction(async () => {
+      // Buyer refused parcel at doorstep
+      const updated = await q(
+        `update deals set status='released', outcome='refused_at_door', courier_status='refused', updated_at=CURRENT_TIMESTAMP
+         where id=$1 and status in ('shipped', 'in_transit')
+         returning *`,
+        [deal.id]
+      );
 
-    const deliveryAndReturn = (deal.delivery_charge || 0) + (deal.return_charge || deal.delivery_charge || 0);
-    const buyerRefund = Math.max(0, deal.total_amount - deliveryAndReturn - deal.fee_amount);
+      if (updated.length !== 1) {
+        return one("select * from deals where id=$1", [deal.id]);
+      }
 
-    if (deliveryAndReturn > 0) {
-      await addLedger({
-        dealId: deal.id,
-        type: "payout_seller",
-        amount: deliveryAndReturn,
-        notes: `Delivery & return shipping compensation for refused order #${deal.code}`,
+      const deliveryAndReturn = (deal.delivery_charge || 0) + (deal.return_charge || deal.delivery_charge || 0);
+      const buyerRefund = Math.max(0, deal.total_amount - deliveryAndReturn - deal.fee_amount);
+
+      if (deliveryAndReturn > 0) {
+        await addLedger({
+          dealId: deal.id,
+          type: "payout_seller",
+          amount: deliveryAndReturn,
+          notes: `Delivery & return shipping compensation for refused order #${deal.code}`,
+        });
+      }
+
+      if (deal.fee_amount > 0) {
+        await addLedger({
+          dealId: deal.id,
+          type: "platform_fee",
+          amount: deal.fee_amount,
+          notes: `Platform service fee for #${deal.code}`,
+        });
+      }
+
+      if (buyerRefund > 0) {
+        await addLedger({
+          dealId: deal.id,
+          type: "refund_buyer",
+          amount: buyerRefund,
+          partyPhone: deal.buyer_phone,
+          notes: `Refund after delivery deductions for refused order #${deal.code}`,
+        });
+      }
+
+      await bumpBuyer(deal.buyer_phone, "refused");
+      await log(deal.id, "refused", `Buyer refused parcel at doorstep. Shipping compensation released to seller, remaining balance refunded to buyer.`, {
+        fromStatus: deal.status,
+        toStatus: "released",
+        actor: "courier",
       });
-    }
 
-    if (deal.fee_amount > 0) {
-      await addLedger({
-        dealId: deal.id,
-        type: "platform_fee",
-        amount: deal.fee_amount,
-        notes: `Platform service fee for #${deal.code}`,
-      });
-    }
+      await notify(
+        deal.buyer_phone,
+        `PakkaDeal #${deal.code}: Order refused at doorstep. Refund of ${buyerRefund} BDT processed after delivery charges.`,
+        "Order Refused – Refund Processed",
+        deal.code
+      );
 
-    if (buyerRefund > 0) {
-      await addLedger({
-        dealId: deal.id,
-        type: "refund_buyer",
-        amount: buyerRefund,
-        partyPhone: deal.buyer_phone,
-        notes: `Refund after delivery deductions for refused order #${deal.code}`,
-      });
-    }
+      await notifySeller(
+        deal.seller_id,
+        `PakkaDeal #${deal.code}: Order refused at doorstep. Shipping charge compensation (${deliveryAndReturn} BDT) released to your account.`,
+        "Order Refused",
+        deal.code
+      );
 
-    await bumpBuyer(deal.buyer_phone, "refused");
-    await log(deal.id, "refused", `Buyer refused parcel at doorstep. Shipping compensation released to seller, remaining balance refunded to buyer.`, {
-      fromStatus: deal.status,
-      toStatus: "released",
-      actor: "courier",
+      return updated[0];
     });
-
-    await notify(
-      deal.buyer_phone,
-      `PakkaDeal #${deal.code}: Order refused at doorstep. Refund of ${buyerRefund} BDT processed after delivery charges.`,
-      "Order Refused – Refund Processed",
-      deal.code
-    );
-
-    await notifySeller(
-      deal.seller_id,
-      `PakkaDeal #${deal.code}: Order refused at doorstep. Shipping charge compensation (${deliveryAndReturn} BDT) released to your account.`,
-      "Order Refused",
-      deal.code
-    );
-
-    return one("select * from deals where id=$1", [deal.id]);
   }
 
   return deal;
@@ -347,73 +362,80 @@ export async function applyCourier(deal, status) {
 export async function releaseToSeller(deal, outcome = "buyer_confirmed", actor = "buyer", proofOpts = {}) {
   assertTransition(deal.status, "released", actor);
 
-  // Requirement: Seller bKash must be verified by admin before payout can be released
-  const seller = await one("select * from users where id=$1", [deal.seller_id]);
-  if (!seller || !seller.bkash_verified) {
-    throw new Error("Seller bKash account is not verified by admin. Payout cannot be released until seller's bKash is verified.");
-  }
+  return await transaction(async () => {
+    // Requirement: Seller bKash must be verified by admin before payout can be released
+    const seller = await one("select * from users where id=$1", [deal.seller_id]);
+    if (!seller || !seller.bkash_verified) {
+      throw new Error("Seller bKash account is not verified by admin. Payout cannot be released until seller's bKash is verified.");
+    }
 
-  const payout = deal.seller_payout || (deal.price + (deal.delivery_charge || 0));
-  const fee = deal.fee_amount || Math.max(0, deal.total_amount - payout);
+    const payout = deal.seller_payout || (deal.price + (deal.delivery_charge || 0));
+    const fee = deal.fee_amount || Math.max(0, deal.total_amount - payout);
 
-  const unboxingPhoto = proofOpts.unboxingPhoto || null;
-  const unboxingPhotoType = proofOpts.unboxingPhotoType || "";
+    const unboxingPhoto = proofOpts.unboxingPhoto || null;
+    const unboxingPhotoType = proofOpts.unboxingPhotoType || "";
 
-  await q(
-    `update deals set
-       status='released',
-       outcome=$2,
-       auto_release_paused=1,
-       payout_status='pending',
-       unboxing_photo=coalesce($3, unboxing_photo),
-       unboxing_photo_type=case when $3 is not null then $4 else unboxing_photo_type end,
-       updated_at=CURRENT_TIMESTAMP
-     where id=$1`,
-    [deal.id, outcome, unboxingPhoto, unboxingPhotoType]
-  );
+    const updated = await q(
+      `update deals set
+         status='released',
+         outcome=$2,
+         auto_release_paused=1,
+         payout_status='pending',
+         unboxing_photo=coalesce($3, unboxing_photo),
+         unboxing_photo_type=case when $3 is not null then $4 else unboxing_photo_type end,
+         updated_at=CURRENT_TIMESTAMP
+       where id=$1 and status in ('delivered', 'disputed')
+       returning *`,
+      [deal.id, outcome, unboxingPhoto, unboxingPhotoType]
+    );
 
-  await addLedger({
-    dealId: deal.id,
-    type: "payout_seller",
-    amount: payout,
-    notes: `Seller payout for deal #${deal.code}`,
+    if (updated.length !== 1) {
+      return one("select * from deals where id=$1", [deal.id]);
+    }
+
+    await addLedger({
+      dealId: deal.id,
+      type: "payout_seller",
+      amount: payout,
+      notes: `Seller payout for deal #${deal.code}`,
+    });
+
+    await addLedger({
+      dealId: deal.id,
+      type: "platform_fee",
+      amount: fee,
+      notes: `Platform service fee for deal #${deal.code}`,
+    });
+
+    await bumpBuyer(deal.buyer_phone, "delivered");
+    await bumpSeller(deal.seller_id, "completed");
+
+    const noteMsg = outcome === "auto_release_timeout"
+      ? "24-hour confirmation window expired. Escrow funds auto-released to seller."
+      : `Buyer confirmed receipt${unboxingPhoto ? " with unboxing proof" : ""}. Money released to seller.`;
+
+    await log(deal.id, "released", noteMsg, {
+      fromStatus: deal.status,
+      toStatus: "released",
+      actor: actor,
+    });
+
+    await notify(
+      deal.buyer_phone,
+      `PakkaDeal #${deal.code}: Deal successfully completed. Thank you for using PakkaDeal Escrow!`,
+      "Deal Completed",
+      deal.code
+    );
+
+    await notifySeller(
+      deal.seller_id,
+      `PakkaDeal #${deal.code}: ${payout.toLocaleString()} BDT released to your account in full.`,
+      "Funds Released to Seller",
+      deal.code
+    );
+
+    return updated[0];
   });
-
-  await addLedger({
-    dealId: deal.id,
-    type: "platform_fee",
-    amount: fee,
-    notes: `Platform service fee for deal #${deal.code}`,
-  });
-
-  await bumpBuyer(deal.buyer_phone, "delivered");
-  await bumpSeller(deal.seller_id, "completed");
-
-  const noteMsg = outcome === "auto_release_timeout"
-    ? "24-hour confirmation window expired. Escrow funds auto-released to seller."
-    : `Buyer confirmed receipt${unboxingPhoto ? " with unboxing proof" : ""}. Money released to seller.`;
-
-  await log(deal.id, "released", noteMsg, {
-    fromStatus: deal.status,
-    toStatus: "released",
-    actor: actor,
-  });
-
-  await notify(
-    deal.buyer_phone,
-    `PakkaDeal #${deal.code}: Deal successfully completed. Thank you for using PakkaDeal Escrow!`,
-    "Deal Completed",
-    deal.code
-  );
-
-  await notifySeller(
-    deal.seller_id,
-    `PakkaDeal #${deal.code}: ${payout.toLocaleString()} BDT released to your account in full.`,
-    "Funds Released to Seller",
-    deal.code
-  );
-
-  return one("select * from deals where id=$1", [deal.id]);
 }
 
 /** Buyer requests a return */
@@ -495,72 +517,79 @@ export async function shipReturn(deal, courierName, trackingId, actor = "buyer")
 export async function completeReturn(deal, actor = "seller") {
   assertTransition(deal.status, "refunded", actor);
 
-  await q(
-    `update deals set
-       status='refunded',
-       outcome='return_received',
-       auto_release_paused=1,
-       updated_at=CURRENT_TIMESTAMP
-     where id=$1`,
-    [deal.id]
-  );
+  return await transaction(async () => {
+    const updated = await q(
+      `update deals set
+         status='refunded',
+         outcome='return_received',
+         auto_release_paused=1,
+         updated_at=CURRENT_TIMESTAMP
+       where id=$1 and status in ('return_requested', 'return_shipped', 'return_received')
+       returning *`,
+      [deal.id]
+    );
 
-  const returnDeduction = deal.return_policy === "buyer_pays" ? (deal.delivery_charge || 0) : 0;
-  const refundAmount = Math.max(0, deal.total_amount - returnDeduction - deal.fee_amount);
+    if (updated.length !== 1) {
+      return one("select * from deals where id=$1", [deal.id]);
+    }
 
-  if (returnDeduction > 0) {
+    const returnDeduction = deal.return_policy === "buyer_pays" ? (deal.delivery_charge || 0) : 0;
+    const refundAmount = Math.max(0, deal.total_amount - returnDeduction - deal.fee_amount);
+
+    if (returnDeduction > 0) {
+      await addLedger({
+        dealId: deal.id,
+        type: "payout_seller",
+        amount: returnDeduction,
+        notes: `Return shipping deduction credited to seller for #${deal.code}`,
+      });
+    }
+
+    if (deal.fee_amount > 0) {
+      await addLedger({
+        dealId: deal.id,
+        type: "platform_fee",
+        amount: deal.fee_amount,
+        notes: `Platform fee for returned deal #${deal.code}`,
+      });
+    }
+
     await addLedger({
       dealId: deal.id,
-      type: "payout_seller",
-      amount: returnDeduction,
-      notes: `Return shipping deduction credited to seller for #${deal.code}`,
+      type: "refund_buyer",
+      amount: refundAmount,
+      partyPhone: deal.buyer_phone,
+      notes: `Refund to buyer after return received for #${deal.code}`,
     });
-  }
 
-  if (deal.fee_amount > 0) {
-    await addLedger({
-      dealId: deal.id,
-      type: "platform_fee",
-      amount: deal.fee_amount,
-      notes: `Platform fee for returned deal #${deal.code}`,
+    await log(deal.id, "refunded", `Return item received. Buyer refunded ${refundAmount.toLocaleString()} BDT (deductions: ${returnDeduction} BDT return fee).`, {
+      fromStatus: deal.status,
+      toStatus: "refunded",
+      actor: actor,
     });
-  }
 
-  await addLedger({
-    dealId: deal.id,
-    type: "refund_buyer",
-    amount: refundAmount,
-    partyPhone: deal.buyer_phone,
-    notes: `Refund to buyer after return received for #${deal.code}`,
+    await notify(
+      deal.buyer_phone,
+      `PakkaDeal #${deal.code}: Return verified. ${refundAmount.toLocaleString()} BDT refunded to you.`,
+      "Return Refund Processed",
+      deal.code
+    );
+
+    await notifySeller(
+      deal.seller_id,
+      `PakkaDeal #${deal.code}: Return parcel delivery confirmed. Deal concluded.`,
+      "Return Complete",
+      deal.code
+    );
+
+    return updated[0];
   });
-
-  await log(deal.id, "refunded", `Return item received. Buyer refunded ${refundAmount.toLocaleString()} BDT (deductions: ${returnDeduction} BDT return fee).`, {
-    fromStatus: deal.status,
-    toStatus: "refunded",
-    actor: actor,
-  });
-
-  await notify(
-    deal.buyer_phone,
-    `PakkaDeal #${deal.code}: Return verified. ${refundAmount.toLocaleString()} BDT refunded to you.`,
-    "Return Refund Processed",
-    deal.code
-  );
-
-  await notifySeller(
-    deal.seller_id,
-    `PakkaDeal #${deal.code}: Return parcel delivery confirmed. Deal concluded.`,
-    "Return Complete",
-    deal.code
-  );
-
-  return one("select * from deals where id=$1", [deal.id]);
 }
 
 /** Rental / Service dual confirmation */
 export async function applyHandoverConfirmation(deal, user) {
-  const isSeller = user.id === deal.seller_id;
-  const isBuyer = user.phone === deal.buyer_phone;
+  const isSeller = Number(user.id) === Number(deal.seller_id);
+  const isBuyer = Number(user.id) === Number(deal.buyer_id);
   if (!isSeller && !isBuyer) throw new Error("Unauthorized to confirm this deal");
 
   let sellerConfirmed = deal.seller_confirmed;
@@ -601,170 +630,212 @@ export async function applyHandoverConfirmation(deal, user) {
 
 /** Admin Force Release */
 export async function adminForceRelease(deal, adminNotes = "", actor = "admin") {
-  const seller = await one("select * from users where id=$1", [deal.seller_id]);
-  if (!seller || !seller.bkash_verified) {
-    throw new Error("Seller bKash account is not verified by admin. Payout cannot be released until seller's bKash is verified.");
-  }
+  return await transaction(async () => {
+    const seller = await one("select * from users where id=$1", [deal.seller_id]);
+    if (!seller || !seller.bkash_verified) {
+      throw new Error("Seller bKash account is not verified by admin. Payout cannot be released until seller's bKash is verified.");
+    }
 
-  const payout = deal.seller_payout || (deal.price + (deal.delivery_charge || 0));
-  const fee = deal.fee_amount || Math.max(0, deal.total_amount - payout);
+    const payout = deal.seller_payout || (deal.price + (deal.delivery_charge || 0));
+    const fee = deal.fee_amount || Math.max(0, deal.total_amount - payout);
 
-  await q(
-    `update deals set status='released', outcome='admin_forced_release', auto_release_paused=1, updated_at=CURRENT_TIMESTAMP where id=$1`,
-    [deal.id]
-  );
+    const updated = await q(
+      `update deals set status='released', outcome='admin_forced_release', auto_release_paused=1, updated_at=CURRENT_TIMESTAMP
+       where id=$1 and status not in ('released', 'refunded', 'cancelled')
+       returning *`,
+      [deal.id]
+    );
 
-  await addLedger({
-    dealId: deal.id,
-    type: "payout_seller",
-    amount: payout,
-    notes: `Admin force released funds for #${deal.code}. Reason: ${adminNotes}`,
+    if (updated.length !== 1) {
+      return one("select * from deals where id=$1", [deal.id]);
+    }
+
+    await addLedger({
+      dealId: deal.id,
+      type: "payout_seller",
+      amount: payout,
+      notes: `Admin force released funds for #${deal.code}. Reason: ${adminNotes}`,
+    });
+
+    await addLedger({
+      dealId: deal.id,
+      type: "platform_fee",
+      amount: fee,
+      notes: `Platform service fee for #${deal.code}`,
+    });
+
+    await bumpSeller(deal.seller_id, "completed");
+
+    await log(deal.id, "released", `Admin force released funds to seller. Notes: ${adminNotes || "Administrative clearance"}`, {
+      fromStatus: deal.status,
+      toStatus: "released",
+      actor: "admin",
+    });
+
+    await notify(deal.buyer_phone, `PakkaDeal #${deal.code}: Administrative review completed. Funds released to seller.`);
+    await notifySeller(deal.seller_id, `PakkaDeal #${deal.code}: ${payout.toLocaleString()} BDT released to your account by admin decision.`);
+
+    return updated[0];
   });
-
-  await addLedger({
-    dealId: deal.id,
-    type: "platform_fee",
-    amount: fee,
-    notes: `Platform service fee for #${deal.code}`,
-  });
-
-  await bumpSeller(deal.seller_id, "completed");
-
-  await log(deal.id, "released", `Admin force released funds to seller. Notes: ${adminNotes || "Administrative clearance"}`, {
-    fromStatus: deal.status,
-    toStatus: "released",
-    actor: "admin",
-  });
-
-  await notify(deal.buyer_phone, `PakkaDeal #${deal.code}: Administrative review completed. Funds released to seller.`);
-  await notifySeller(deal.seller_id, `PakkaDeal #${deal.code}: ${payout.toLocaleString()} BDT released to your account by admin decision.`);
-
-  return one("select * from deals where id=$1", [deal.id]);
 }
 
 /** Admin Force Refund */
 export async function adminForceRefund(deal, adminNotes = "", actor = "admin") {
-  const refundAmount = deal.total_amount;
+  return await transaction(async () => {
+    const refundAmount = deal.total_amount;
 
-  await q(
-    `update deals set status='refunded', outcome='admin_forced_refund', auto_release_paused=1, updated_at=CURRENT_TIMESTAMP where id=$1`,
-    [deal.id]
-  );
+    const updated = await q(
+      `update deals set status='refunded', outcome='admin_forced_refund', auto_release_paused=1, updated_at=CURRENT_TIMESTAMP
+       where id=$1 and status not in ('released', 'refunded', 'cancelled')
+       returning *`,
+      [deal.id]
+    );
 
-  await addLedger({
-    dealId: deal.id,
-    type: "refund_buyer",
-    amount: refundAmount,
-    partyPhone: deal.buyer_phone,
-    notes: `Admin force refunded buyer for #${deal.code}. Reason: ${adminNotes}`,
+    if (updated.length !== 1) {
+      return one("select * from deals where id=$1", [deal.id]);
+    }
+
+    await addLedger({
+      dealId: deal.id,
+      type: "refund_buyer",
+      amount: refundAmount,
+      partyPhone: deal.buyer_phone,
+      notes: `Admin force refunded buyer for #${deal.code}. Reason: ${adminNotes}`,
+    });
+
+    await bumpSeller(deal.seller_id, "disputes");
+
+    await log(deal.id, "refunded", `Admin force refunded deal to buyer. Notes: ${adminNotes || "Administrative refund"}`, {
+      fromStatus: deal.status,
+      toStatus: "refunded",
+      actor: "admin",
+    });
+
+    await notify(deal.buyer_phone, `PakkaDeal #${deal.code}: Full refund of ${refundAmount.toLocaleString()} BDT processed by admin.`);
+    await notifySeller(deal.seller_id, `PakkaDeal #${deal.code}: Deal cancelled and refunded to buyer by admin decision.`);
+
+    return updated[0];
   });
-
-  await bumpSeller(deal.seller_id, "disputes");
-
-  await log(deal.id, "refunded", `Admin force refunded deal to buyer. Notes: ${adminNotes || "Administrative refund"}`, {
-    fromStatus: deal.status,
-    toStatus: "refunded",
-    actor: "admin",
-  });
-
-  await notify(deal.buyer_phone, `PakkaDeal #${deal.code}: Full refund of ${refundAmount.toLocaleString()} BDT processed by admin.`);
-  await notifySeller(deal.seller_id, `PakkaDeal #${deal.code}: Deal cancelled and refunded to buyer by admin decision.`);
-
-  return one("select * from deals where id=$1", [deal.id]);
 }
 
 /** Admin Split Resolution */
 export async function adminSplitResolution(deal, sellerAmount, buyerAmount, adminNotes = "", actor = "admin") {
-  await q(
-    `update deals set status='released', outcome='admin_split_resolution', auto_release_paused=1, updated_at=CURRENT_TIMESTAMP where id=$1`,
-    [deal.id]
-  );
-
-  if (sellerAmount > 0) {
-    await addLedger({
-      dealId: deal.id,
-      type: "payout_seller",
-      amount: sellerAmount,
-      notes: `Admin split payout to seller for #${deal.code}. Reason: ${adminNotes}`,
-    });
+  if (sellerAmount + buyerAmount > deal.total_amount) {
+    throw new Error(`Total split amount (${sellerAmount + buyerAmount}) cannot exceed deal total amount (${deal.total_amount})`);
   }
 
-  if (buyerAmount > 0) {
-    await addLedger({
-      dealId: deal.id,
-      type: "refund_buyer",
-      amount: buyerAmount,
-      partyPhone: deal.buyer_phone,
-      notes: `Admin split refund to buyer for #${deal.code}. Reason: ${adminNotes}`,
-    });
-  }
+  return await transaction(async () => {
+    const updated = await q(
+      `update deals set status='released', outcome='admin_split_resolution', auto_release_paused=1, updated_at=CURRENT_TIMESTAMP
+       where id=$1 and status not in ('released', 'refunded', 'cancelled')
+       returning *`,
+      [deal.id]
+    );
 
-  await log(deal.id, "released", `Admin resolved via split payout: Seller ${sellerAmount} BDT, Buyer ${buyerAmount} BDT. Notes: ${adminNotes}`, {
-    fromStatus: deal.status,
-    toStatus: "released",
-    actor: "admin",
+    if (updated.length !== 1) {
+      return one("select * from deals where id=$1", [deal.id]);
+    }
+
+    if (sellerAmount > 0) {
+      await addLedger({
+        dealId: deal.id,
+        type: "payout_seller",
+        amount: sellerAmount,
+        notes: `Admin split payout to seller for #${deal.code}. Reason: ${adminNotes}`,
+      });
+    }
+
+    if (buyerAmount > 0) {
+      await addLedger({
+        dealId: deal.id,
+        type: "refund_buyer",
+        amount: buyerAmount,
+        partyPhone: deal.buyer_phone,
+        notes: `Admin split refund to buyer for #${deal.code}. Reason: ${adminNotes}`,
+      });
+    }
+
+    await log(deal.id, "released", `Admin resolved via split payout: Seller ${sellerAmount} BDT, Buyer ${buyerAmount} BDT. Notes: ${adminNotes}`, {
+      fromStatus: deal.status,
+      toStatus: "released",
+      actor: "admin",
+    });
+
+    await notify(deal.buyer_phone, `PakkaDeal #${deal.code}: Dispute resolved via split. ${buyerAmount} BDT refunded to you.`);
+    await notifySeller(deal.seller_id, `PakkaDeal #${deal.code}: Dispute resolved via split. ${sellerAmount} BDT released to you.`);
+
+    return updated[0];
   });
-
-  await notify(deal.buyer_phone, `PakkaDeal #${deal.code}: Dispute resolved via split. ${buyerAmount} BDT refunded to you.`);
-  await notifySeller(deal.seller_id, `PakkaDeal #${deal.code}: Dispute resolved via split. ${sellerAmount} BDT released to you.`);
-
-  return one("select * from deals where id=$1", [deal.id]);
 }
+
+let isCheckingTimeouts = false;
 
 /** Check automated timeouts: seller ship timeout or 24h buyer confirmation timeout */
 export async function checkAllTimeouts() {
-  const now = new Date().toISOString();
+  if (isCheckingTimeouts) return;
+  isCheckingTimeouts = true;
+  try {
+    const now = new Date().toISOString();
 
-  // 1. Unshipped deals past ship_by -> auto full refund to buyer
-  const lateDeals = await q(
-    "select * from deals where status='held' and ship_by is not null and ship_by < $1",
-    [now]
-  );
-  for (const deal of lateDeals) {
-    await q(
-      `update deals set status='refunded', outcome='seller_ship_timeout', updated_at=CURRENT_TIMESTAMP where id=$1`,
-      [deal.id]
+    // 1. Unshipped deals past ship_by -> auto full refund to buyer
+    const lateDeals = await q(
+      "select * from deals where status='held' and ship_by is not null and ship_by < $1",
+      [now]
     );
-    await addLedger({
-      dealId: deal.id,
-      type: "refund_buyer",
-      amount: deal.total_amount,
-      partyPhone: deal.buyer_phone,
-      notes: `Auto refund: Seller did not ship within deadline for #${deal.code}`,
-    });
-    await bumpSeller(deal.seller_id, "refused");
-    await log(deal.id, "refunded", "Seller did not ship within agreed deadline. Buyer fully refunded.", {
-      fromStatus: "held",
-      toStatus: "refunded",
-      actor: "system",
-    });
-    await notify(
-      deal.buyer_phone,
-      `PakkaDeal #${deal.code}: Full refund of ${deal.total_amount.toLocaleString()} BDT processed because seller did not dispatch on time.`,
-      "Auto Refund – Seller Missed Dispatch Deadline",
-      deal.code
-    );
-    await notifySeller(
-      deal.seller_id,
-      `PakkaDeal #${deal.code}: Cancelled and buyer refunded due to shipping deadline expiration.`,
-      "Deal Cancelled – Shipping Timeout",
-      deal.code
-    );
-  }
+    for (const deal of lateDeals) {
+      await transaction(async () => {
+        const updated = await q(
+          `update deals set status='refunded', outcome='seller_ship_timeout', updated_at=CURRENT_TIMESTAMP
+           where id=$1 and status='held'
+           returning *`,
+          [deal.id]
+        );
+        if (updated.length !== 1) return;
 
-  // 2. Delivered deals past auto_release_at (24 hours) where countdown is not paused -> auto release to seller
-  const readyDeals = await q(
-    `select * from deals
-     where status='delivered'
-       and auto_release_paused = 0
-       and (
-         (auto_release_at is not null and auto_release_at < $1)
-         or (confirm_by is not null and confirm_by < $1)
-       )`,
-    [now]
-  );
-  for (const deal of readyDeals) {
-    console.log(`[AUTO-RELEASE TIMER] 24-hour window elapsed for deal #${deal.code}. Auto-releasing funds to seller.`);
-    await releaseToSeller(deal, "auto_release_timeout", "system");
+        await addLedger({
+          dealId: deal.id,
+          type: "refund_buyer",
+          amount: deal.total_amount,
+          partyPhone: deal.buyer_phone,
+          notes: `Auto refund: Seller did not ship within deadline for #${deal.code}`,
+        });
+        await bumpSeller(deal.seller_id, "refused");
+        await log(deal.id, "refunded", "Seller did not ship within agreed deadline. Buyer fully refunded.", {
+          fromStatus: "held",
+          toStatus: "refunded",
+          actor: "system",
+        });
+        await notify(
+          deal.buyer_phone,
+          `PakkaDeal #${deal.code}: Full refund of ${deal.total_amount.toLocaleString()} BDT processed because seller did not dispatch on time.`,
+          "Auto Refund – Seller Missed Dispatch Deadline",
+          deal.code
+        );
+        await notifySeller(
+          deal.seller_id,
+          `PakkaDeal #${deal.code}: Cancelled and buyer refunded due to shipping deadline expiration.`,
+          "Deal Cancelled – Shipping Timeout",
+          deal.code
+        );
+      });
+    }
+
+    // 2. Delivered deals past auto_release_at (24 hours) where countdown is not paused -> auto release to seller
+    const readyDeals = await q(
+      `select * from deals
+       where status='delivered'
+         and auto_release_paused = 0
+         and (
+           (auto_release_at is not null and auto_release_at < $1)
+           or (confirm_by is not null and confirm_by < $1)
+         )`,
+      [now]
+    );
+    for (const deal of readyDeals) {
+      console.log(`[AUTO-RELEASE TIMER] 24-hour window elapsed for deal #${deal.code}. Auto-releasing funds to seller.`);
+      await releaseToSeller(deal, "auto_release_timeout", "system");
+    }
+  } finally {
+    isCheckingTimeouts = false;
   }
 }

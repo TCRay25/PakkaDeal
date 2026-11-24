@@ -14,7 +14,11 @@ export function startCronJobs(intervalMs = 30000) {
   intervalId = setInterval(runTasks, intervalMs);
 }
 
+let isRunning = false;
+
 async function runTasks() {
+  if (isRunning) return;
+  isRunning = true;
   try {
     // 1. Check auto-release 24-hour timers and shipping timeouts
     await checkAllTimeouts();
@@ -23,6 +27,8 @@ async function runTasks() {
     await pollActiveShipments();
   } catch (err) {
     console.error("[CRON TASK ERROR]", err.message);
+  } finally {
+    isRunning = false;
   }
 }
 

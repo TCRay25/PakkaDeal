@@ -1,7 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
-import { one, q } from "../db.js";
-import { adminOnly, auth, fail } from "../http.js";
+import { one, q, transaction } from "../db.js";
+import { adminOnly, auth, fail, isAdmin } from "../http.js";
 import { loadDeal } from "./deals.js";
 import { analyze } from "../services/disputeAi.js";
 import { addLedger, calculateFee } from "../services/settle.js";
@@ -24,8 +24,8 @@ const upload = multer({
 
 router.post("/deals/:code/dispute", auth, upload.single("photo"), async (req, res) => {
   const deal = await loadDeal(req.params.code);
-  const isBuyer = req.user.phone === deal.buyer_phone;
-  const isSeller = req.user.id === deal.seller_id;
+  const isBuyer = Number(req.user.id) === Number(deal.buyer_id);
+  const isSeller = Number(req.user.id) === Number(deal.seller_id);
 
   if (!isBuyer && !isSeller) fail(403, "Only the buyer or seller can dispute this deal");
   if (!["held", "shipped", "delivered", "return_requested", "return_shipped"].includes(deal.status)) {
@@ -110,9 +110,23 @@ router.get("/disputes", auth, adminOnly, async (_req, res) => {
   res.json(rows);
 });
 
-router.get("/disputes/:id/photo", async (req, res) => {
-  const d = await one("select photo, photo_type from disputes where id=$1", [req.params.id]);
-  if (!d?.photo) fail(404, "No photo attached to this dispute");
+router.get("/disputes/:id/photo", auth, async (req, res) => {
+  const d = await one("select * from disputes where id=$1", [req.params.id]);
+  if (!d) fail(404, "Dispute not found");
+
+  const deal = await one("select seller_id, buyer_id from deals where id=$1", [d.deal_id]);
+  if (!deal) fail(404, "Associated deal not found");
+
+  const isSeller = Number(req.user.id) === Number(deal.seller_id);
+  const isBuyer = Number(req.user.id) === Number(deal.buyer_id);
+  const isAdminUser = isAdmin(req.user);
+
+  if (!isSeller && !isBuyer && !isAdminUser) {
+    fail(403, "Access denied: only dispute participants or admin can view evidence photo");
+  }
+
+  if (!d.photo) fail(404, "No photo attached to this dispute");
+  res.set("X-Content-Type-Options", "nosniff");
   res.type(d.photo_type || "image/jpeg").send(d.photo);
 });
 
@@ -132,49 +146,64 @@ router.post("/disputes/:id/decide", auth, adminOnly, async (req, res) => {
 
   const isUpheld = decision === "upheld";
 
-  if (isUpheld) {
-    // Buyer refunded full amount (or full minus delivery depending on dispute reason)
-    const refundAmount = deal.total_amount;
-    await q(`update deals set status='refunded', outcome='dispute_upheld', updated_at=CURRENT_TIMESTAMP where id=$1`, [deal.id]);
-    await addLedger({
-      dealId: deal.id,
-      type: "refund_buyer",
-      amount: refundAmount,
-      partyPhone: deal.buyer_phone,
-      notes: `Admin upheld dispute #${d.id}. Full refund to buyer. Notes: ${adminNotes}`,
-    });
-    await bumpSeller(deal.seller_id, "disputes");
-    await log(deal.id, "dispute_upheld", `Admin decided in favor of buyer: ${adminNotes || "Claim upheld"}`);
-    await notify(deal.buyer_phone, `PakkaDeal #${deal.code}: Dispute upheld. Full refund of ${refundAmount} BDT processed.`);
-    await notifySeller(deal.seller_id, `PakkaDeal #${deal.code}: Dispute concluded. Refund granted to buyer.`);
-  } else {
-    // Rejected: seller receives payout minus fee
-    const payout = deal.seller_payout || (deal.total_amount - deal.fee_amount);
-    const fee = deal.fee_amount || (await calculateFee(deal.total_amount));
+  await transaction(async () => {
+    const updatedDispute = await q(
+      `update disputes set status=$2, admin_notes=$3 where id=$1 and status='open' returning *`,
+      [d.id, isUpheld ? "upheld" : "rejected", adminNotes]
+    );
+    if (updatedDispute.length !== 1) {
+      fail(400, "Dispute is already resolved or not found");
+    }
 
-    await q(`update deals set status='released', outcome='dispute_rejected', updated_at=CURRENT_TIMESTAMP where id=$1`, [deal.id]);
-    await addLedger({
-      dealId: deal.id,
-      type: "payout_seller",
-      amount: payout,
-      notes: `Admin rejected dispute #${d.id}. Funds released to seller. Notes: ${adminNotes}`,
-    });
-    await addLedger({
-      dealId: deal.id,
-      type: "platform_fee",
-      amount: fee,
-      notes: `Platform service fee for #${deal.code}`,
-    });
-    await bumpBuyer(deal.buyer_phone, "disputes");
-    await log(deal.id, "dispute_rejected", `Admin rejected dispute: ${adminNotes || "Claim dismissed; seller paid"}`);
-    await notify(deal.buyer_phone, `PakkaDeal #${deal.code}: Dispute reviewed and concluded in seller favor.`);
-    await notifySeller(deal.seller_id, `PakkaDeal #${deal.code}: Dispute dismissed. ${payout} BDT released to your account.`);
-  }
+    if (isUpheld) {
+      // Buyer refunded full amount (or full minus delivery depending on dispute reason)
+      const refundAmount = deal.total_amount;
+      const updatedDeal = await q(
+        `update deals set status='refunded', outcome='dispute_upheld', updated_at=CURRENT_TIMESTAMP where id=$1 and status='disputed' returning *`,
+        [deal.id]
+      );
+      if (updatedDeal.length === 1) {
+        await addLedger({
+          dealId: deal.id,
+          type: "refund_buyer",
+          amount: refundAmount,
+          partyPhone: deal.buyer_phone,
+          notes: `Admin upheld dispute #${d.id}. Full refund to buyer. Notes: ${adminNotes}`,
+        });
+        await bumpSeller(deal.seller_id, "disputes");
+        await log(deal.id, "dispute_upheld", `Admin decided in favor of buyer: ${adminNotes || "Claim upheld"}`);
+        await notify(deal.buyer_phone, `PakkaDeal #${deal.code}: Dispute upheld. Full refund of ${refundAmount} BDT processed.`);
+        await notifySeller(deal.seller_id, `PakkaDeal #${deal.code}: Dispute concluded. Refund granted to buyer.`);
+      }
+    } else {
+      // Rejected: seller receives payout minus fee
+      const payout = deal.seller_payout || (deal.total_amount - deal.fee_amount);
+      const fee = deal.fee_amount || (await calculateFee(deal.total_amount));
 
-  await q(
-    `update disputes set status=$2, admin_notes=$3 where id=$1`,
-    [d.id, isUpheld ? "upheld" : "rejected", adminNotes]
-  );
+      const updatedDeal = await q(
+        `update deals set status='released', outcome='dispute_rejected', updated_at=CURRENT_TIMESTAMP where id=$1 and status='disputed' returning *`,
+        [deal.id]
+      );
+      if (updatedDeal.length === 1) {
+        await addLedger({
+          dealId: deal.id,
+          type: "payout_seller",
+          amount: payout,
+          notes: `Admin rejected dispute #${d.id}. Funds released to seller. Notes: ${adminNotes}`,
+        });
+        await addLedger({
+          dealId: deal.id,
+          type: "platform_fee",
+          amount: fee,
+          notes: `Platform service fee for #${deal.code}`,
+        });
+        await bumpBuyer(deal.buyer_phone, "disputes");
+        await log(deal.id, "dispute_rejected", `Admin rejected dispute: ${adminNotes || "Claim dismissed; seller paid"}`);
+        await notify(deal.buyer_phone, `PakkaDeal #${deal.code}: Dispute reviewed and concluded in seller favor.`);
+        await notifySeller(deal.seller_id, `PakkaDeal #${deal.code}: Dispute dismissed. ${payout} BDT released to your account.`);
+      }
+    }
+  });
 
   emitToAdmin("admin:dispute_decided", {
     disputeId: d.id,

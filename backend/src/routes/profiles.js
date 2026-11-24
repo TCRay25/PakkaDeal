@@ -93,8 +93,8 @@ router.patch("/me", auth, async (req, res) => {
   // If bKash number is updated or changed, bkash_verified resets to 0 (false)
   const bkashChanged = cleanBkash !== undefined && cleanBkash !== currentUser.bkash_number;
   const newVerified = bkashChanged ? 0 : currentUser.bkash_verified;
-  const newPhone = cleanBkash ? cleanBkash : currentUser.phone;
 
+  // Phone is strictly immutable after verification. PATCH /profiles/me must never change phone.
   const user = await one(
     `update users set
        name = coalesce($2, name),
@@ -102,8 +102,7 @@ router.patch("/me", auth, async (req, res) => {
        page_url = coalesce($4, page_url),
        bkash_number = coalesce($5, bkash_number),
        bkash_type = coalesce($6, bkash_type),
-       bkash_verified = $7,
-       phone = coalesce($8, phone)
+       bkash_verified = $7
      where id=$1 returning *`,
     [
       req.user.id,
@@ -113,20 +112,30 @@ router.patch("/me", auth, async (req, res) => {
       cleanBkash !== undefined ? cleanBkash : null,
       cleanBkashType !== undefined ? cleanBkashType : null,
       newVerified,
-      newPhone,
     ]
   );
   res.json({ user });
 });
 
 router.get("/seller/:id", async (req, res) => {
+  const param = String(req.params.id || "").trim();
+  const numId = Number(param) || 0;
   const s = await one(
-    "select id, name, phone, page_name, page_url, seller_trust, created_at from users where id=$1",
-    [req.params.id]
+    "select id, public_id, name, page_name, page_url, seller_trust, created_at from users where public_id=$1 or id=$2",
+    [param, numId]
   );
   if (!s) fail(404, "Seller profile not found");
   const stats = await sellerStats(s.id);
-  res.json({ seller: s, stats });
+  const seller = {
+    id: s.public_id || s.id,
+    public_id: s.public_id || String(s.id),
+    name: s.name,
+    page_name: s.page_name,
+    page_url: s.page_url,
+    seller_trust: s.seller_trust,
+    created_at: s.created_at,
+  };
+  res.json({ seller, stats });
 });
 
 export default router;

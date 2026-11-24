@@ -168,6 +168,9 @@ router.post("/deals/:code/split-resolution", async (req, res) => {
   if (!deal) fail(404, "Deal not found");
   const sellerAmount = Math.max(0, Math.round(Number(req.body.seller_amount || 0)));
   const buyerAmount = Math.max(0, Math.round(Number(req.body.buyer_amount || 0)));
+  if (sellerAmount + buyerAmount > deal.total_amount) {
+    fail(400, `Total split amount (${sellerAmount + buyerAmount}) cannot exceed deal total amount (${deal.total_amount})`);
+  }
   const adminNotes = (req.body.admin_notes || "Split resolution by administrator").trim();
 
   const updated = await adminSplitResolution(deal, sellerAmount, buyerAmount, adminNotes, "admin");
@@ -525,13 +528,25 @@ router.post("/payouts/:id/pay", async (req, res) => {
     [deal.id, payoutTrxId]
   );
 
-  await addLedger({
-    dealId: deal.id,
-    type: "payout_seller",
-    amount: deal.seller_payout,
-    partyPhone: seller.bkash_number || seller.phone,
-    notes: `bKash Payout disbursed by admin (${req.user.phone}) to ${seller.bkash_number} (${seller.bkash_type}). TrxID: ${payoutTrxId}`,
-  });
+  const existingLedger = await one(
+    "select id from ledger where deal_id=$1 and transaction_type='payout_seller'",
+    [deal.id]
+  );
+  if (existingLedger) {
+    await q("update ledger set notes=$2, party_phone=$3 where id=$1", [
+      existingLedger.id,
+      `bKash Payout disbursed by admin (${req.user.phone}) to ${seller.bkash_number} (${seller.bkash_type}). TrxID: ${payoutTrxId}`,
+      seller.bkash_number || seller.phone,
+    ]);
+  } else {
+    await addLedger({
+      dealId: deal.id,
+      type: "payout_seller",
+      amount: deal.seller_payout,
+      partyPhone: seller.bkash_number || seller.phone,
+      notes: `bKash Payout disbursed by admin (${req.user.phone}) to ${seller.bkash_number} (${seller.bkash_type}). TrxID: ${payoutTrxId}`,
+    });
+  }
 
   await log(
     deal.id,
@@ -635,13 +650,25 @@ router.post("/returns/:id/pay-seller", async (req, res) => {
     [deal.id, trxId]
   );
 
-  await addLedger({
-    dealId: deal.id,
-    type: "payout_seller",
-    amount: deliveryAndReturn,
-    partyPhone: seller?.bkash_number || seller?.phone || "",
-    notes: `Seller return/refusal shipping compensation paid via bKash. TrxID: ${trxId}`,
-  });
+  const existingSellerLedger = await one(
+    "select id from ledger where deal_id=$1 and transaction_type='payout_seller'",
+    [deal.id]
+  );
+  if (existingSellerLedger) {
+    await q("update ledger set notes=$2, party_phone=$3 where id=$1", [
+      existingSellerLedger.id,
+      `Seller return/refusal shipping compensation paid via bKash. TrxID: ${trxId}`,
+      seller?.bkash_number || seller?.phone || "",
+    ]);
+  } else {
+    await addLedger({
+      dealId: deal.id,
+      type: "payout_seller",
+      amount: deliveryAndReturn,
+      partyPhone: seller?.bkash_number || seller?.phone || "",
+      notes: `Seller return/refusal shipping compensation paid via bKash. TrxID: ${trxId}`,
+    });
+  }
 
   await log(
     deal.id,
@@ -698,13 +725,25 @@ router.post("/returns/:id/pay-buyer", async (req, res) => {
     [deal.id, trxId]
   );
 
-  await addLedger({
-    dealId: deal.id,
-    type: "refund_buyer",
-    amount: refundAmount,
-    partyPhone: deal.payment_sender || deal.buyer_phone,
-    notes: `Buyer return refund paid via bKash. TrxID: ${trxId}`,
-  });
+  const existingBuyerLedger = await one(
+    "select id from ledger where deal_id=$1 and transaction_type='refund_buyer'",
+    [deal.id]
+  );
+  if (existingBuyerLedger) {
+    await q("update ledger set notes=$2, party_phone=$3 where id=$1", [
+      existingBuyerLedger.id,
+      `Buyer return refund paid via bKash. TrxID: ${trxId}`,
+      deal.payment_sender || deal.buyer_phone,
+    ]);
+  } else {
+    await addLedger({
+      dealId: deal.id,
+      type: "refund_buyer",
+      amount: refundAmount,
+      partyPhone: deal.payment_sender || deal.buyer_phone,
+      notes: `Buyer return refund paid via bKash. TrxID: ${trxId}`,
+    });
+  }
 
   await log(
     deal.id,

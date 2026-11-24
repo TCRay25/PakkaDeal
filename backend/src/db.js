@@ -1,5 +1,7 @@
 import pg from "pg";
 import { DatabaseSync } from "node:sqlite";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -49,12 +51,77 @@ function pgToSqlite(sql, params = []) {
   return { sql: s, params: reordered };
 }
 
+const txStorage = new AsyncLocalStorage();
+let sqliteTxMutex = Promise.resolve();
+
+export function generatePublicId() {
+  return "usr_" + randomBytes(8).toString("hex");
+}
+
 export const isSqliteDb = () => isSqlite;
+
+export const transaction = async (fn) => {
+  if (!initialized) {
+    await initDb();
+  }
+
+  const currentStore = txStorage.getStore();
+  if (currentStore) {
+    // Re-use current active transaction
+    return await fn();
+  }
+
+  if (isSqlite) {
+    const prevMutex = sqliteTxMutex;
+    let releaseMutex;
+    sqliteTxMutex = new Promise((resolve) => {
+      releaseMutex = resolve;
+    });
+    await prevMutex;
+    const db = getSqliteDb();
+    try {
+      db.exec("BEGIN IMMEDIATE;");
+      try {
+        const result = await txStorage.run({ isSqlite: true, db }, async () => {
+          return await fn();
+        });
+        db.exec("COMMIT;");
+        return result;
+      } catch (err) {
+        try {
+          db.exec("ROLLBACK;");
+        } catch (_rb) {}
+        throw err;
+      }
+    } finally {
+      releaseMutex();
+    }
+  } else {
+    const client = await pgPool.connect();
+    try {
+      await client.query("BEGIN;");
+      const result = await txStorage.run({ isSqlite: false, client }, async () => {
+        return await fn();
+      });
+      await client.query("COMMIT;");
+      return result;
+    } catch (err) {
+      try {
+        await client.query("ROLLBACK;");
+      } catch (_rbErr) {}
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+};
 
 export const q = async (text, params = []) => {
   if (!initialized) {
     await initDb();
   }
+
+  const txStore = txStorage.getStore();
 
   if (isSqlite) {
     const { sql: sSql, params: sParams } = pgToSqlite(text, params);
@@ -62,17 +129,27 @@ export const q = async (text, params = []) => {
     const isSelectOrReturning = /^\s*(select|with)/i.test(sSql) || /returning/i.test(sSql);
     const stmt = db.prepare(sSql);
     if (isSelectOrReturning) {
-      return stmt.all(...sParams);
+      const rows = stmt.all(...sParams);
+      rows.rowCount = rows.length;
+      return rows;
     } else {
       const res = stmt.run(...sParams);
-      return [{ ...res, id: res.lastInsertRowid }];
+      const rows = [{ ...res, id: res.lastInsertRowid }];
+      rows.rowCount = res.changes;
+      return rows;
     }
   } else {
     const pgSql = text
       .replace(/datetime\('now'\)/gi, "now()")
       .replace(/datetime\('now',\s*'-(\d+)\s*(minutes|hours|days)'\)/gi, "now() - interval '$1 $2'")
       .replace(/datetime\('now',\s*'\+(\d+)\s*(minutes|hours|days)'\)/gi, "now() + interval '$1 $2'");
-    return (await pgPool.query(pgSql, params)).rows;
+    
+    const res = (txStore && !txStore.isSqlite && txStore.client)
+      ? await txStore.client.query(pgSql, params)
+      : await pgPool.query(pgSql, params);
+    const rows = res.rows;
+    rows.rowCount = res.rowCount;
+    return rows;
   }
 };
 
@@ -112,6 +189,7 @@ export async function initDb() {
     db.exec(`
       create table if not exists users (
         id integer primary key autoincrement,
+        public_id text unique,
         phone text unique not null,
         uid text not null default '',
         name text not null default '',
@@ -125,14 +203,24 @@ export async function initDb() {
         seller_trust int not null default 70,
         buyer_trust int not null default 60,
         is_suspended int not null default 0,
+        token_version int not null default 1,
         created_at text not null default (datetime('now'))
       );
+
+      create trigger if not exists users_auto_public_id
+      after insert on users
+      for each row
+      when new.public_id is null or new.public_id = ''
+      begin
+        update users set public_id = 'usr_' || lower(hex(randomblob(8))) where id = new.id;
+      end;
 
       create table if not exists otps (
         phone text primary key,
         code text not null,
         email text not null default '',
         expires_at text not null,
+        attempts int not null default 0,
         created_at text not null default (datetime('now'))
       );
 
@@ -159,6 +247,7 @@ export async function initDb() {
         code text unique not null,
         deal_type text not null default 'product',
         seller_id int not null,
+        buyer_id int,
         buyer_phone text not null,
         buyer_name text not null,
         address text not null,
@@ -259,6 +348,19 @@ export async function initDb() {
         created_at text not null default (datetime('now'))
       );
 
+      delete from ledger
+      where transaction_type in ('payout_seller', 'refund_buyer', 'platform_fee')
+        and id not in (
+          select min(id)
+          from ledger
+          where transaction_type in ('payout_seller', 'refund_buyer', 'platform_fee')
+          group by deal_id, transaction_type
+        );
+
+      create unique index if not exists ledger_deal_tx_unique
+      on ledger(deal_id, transaction_type)
+      where transaction_type in ('payout_seller', 'refund_buyer', 'platform_fee');
+
       create table if not exists notifications (
         id integer primary key autoincrement,
         phone text not null,
@@ -329,6 +431,7 @@ export async function initDb() {
     await pgPool.query(`
       create table if not exists users (
         id serial primary key,
+        public_id text unique,
         phone text unique not null,
         uid text not null default '',
         name text not null default '',
@@ -342,6 +445,7 @@ export async function initDb() {
         seller_trust int not null default 70,
         buyer_trust int not null default 60,
         is_suspended int not null default 0,
+        token_version int not null default 1,
         created_at timestamptz not null default now()
       );
 
@@ -350,6 +454,7 @@ export async function initDb() {
         code text not null,
         email text not null default '',
         expires_at timestamptz not null,
+        attempts int not null default 0,
         created_at timestamptz not null default now()
       );
 
@@ -376,6 +481,7 @@ export async function initDb() {
         code text unique not null,
         deal_type text not null default 'product',
         seller_id int not null references users(id),
+        buyer_id int,
         buyer_phone text not null,
         buyer_name text not null,
         address text not null,
@@ -473,6 +579,19 @@ export async function initDb() {
         notes text not null default '',
         created_at timestamptz not null default now()
       );
+
+      delete from ledger
+      where transaction_type in ('payout_seller', 'refund_buyer', 'platform_fee')
+        and id not in (
+          select min(id)
+          from ledger
+          where transaction_type in ('payout_seller', 'refund_buyer', 'platform_fee')
+          group by deal_id, transaction_type
+        );
+
+      create unique index if not exists ledger_deal_tx_unique
+      on ledger(deal_id, transaction_type)
+      where transaction_type in ('payout_seller', 'refund_buyer', 'platform_fee');
 
       create table if not exists notifications (
         id serial primary key,
@@ -626,6 +745,8 @@ async function runMigrations() {
         ["seller_trust", "int not null default 70"],
         ["buyer_trust", "int not null default 60"],
         ["is_suspended", "int not null default 0"],
+        ["token_version", "int not null default 1"],
+        ["public_id", "text default ('usr_' || lower(hex(randomblob(8))))"],
       ];
       for (const [col, colType] of neededUserCols) {
         if (!userCols.includes(col)) {
@@ -638,9 +759,15 @@ async function runMigrations() {
           code text not null,
           email text not null default '',
           expires_at text not null,
+          attempts int not null default 0,
           created_at text not null default (datetime('now'))
         );
       `);
+
+      const otpCols = db.prepare("pragma table_info(otps)").all().map(c => c.name);
+      if (!otpCols.includes("attempts")) {
+        db.exec("alter table otps add column attempts int not null default 0");
+      }
 
       const disputeCols = db.prepare("pragma table_info(disputes)").all().map(c => c.name);
       const neededDisputeCols = [
@@ -799,6 +926,8 @@ async function runMigrations() {
         ["seller_trust", "int not null default 70"],
         ["buyer_trust", "int not null default 60"],
         ["is_suspended", "int not null default 0"],
+        ["token_version", "int not null default 1"],
+        ["public_id", "text default ('usr_' || md5(random()::text || clock_timestamp()::text))"],
       ];
       for (const [col, colType] of neededUserCols) {
         await pgPool.query(`alter table users add column if not exists ${col} ${colType}`);
@@ -809,9 +938,11 @@ async function runMigrations() {
           code text not null,
           email text not null default '',
           expires_at timestamptz not null,
+          attempts int not null default 0,
           created_at timestamptz not null default now()
         );
       `);
+      await pgPool.query(`alter table otps add column if not exists attempts int not null default 0`);
 
       const neededDisputeCols = [
         ["raised_by_phone", "text not null default ''"],
@@ -850,6 +981,31 @@ async function runMigrations() {
       await pgPool.query(`update deals set fee_percent = round(cast(fee_amount as numeric) * 100.0 / nullif(total_amount, 0), 1) where total_amount > 0 and (fee_percent is null or fee_percent = 0)`);
       await pgPool.query(`update settings set value='1' where key='platform_fee_percent' and value='2'`);
       await pgPool.query(`update users set bkash_number=phone, bkash_type='Merchant', bkash_verified=1 where phone in ('01700000000', '01711223344', '01811223344', '01911223344') and (bkash_number is null or bkash_number='' or bkash_verified=0)`);
+    }
+
+    // Ensure all users have a public_id populated
+    const unpopulated = await q("select id from users where public_id is null or public_id = ''");
+    for (const u of unpopulated) {
+      await q("update users set public_id=$1 where id=$2", [generatePublicId(), u.id]);
+    }
+
+    if (isSqlite) {
+      getSqliteDb().exec(`
+        drop index if exists users_public_id_idx;
+        create unique index if not exists users_public_id_idx on users(public_id) where public_id is not null and public_id != '';
+        create trigger if not exists users_auto_public_id
+        after insert on users
+        for each row
+        when new.public_id is null or new.public_id = ''
+        begin
+          update users set public_id = 'usr_' || lower(hex(randomblob(8))) where id = new.id;
+        end;
+      `);
+    } else {
+      await pgPool.query(`
+        drop index if exists users_public_id_idx;
+        create unique index if not exists users_public_id_idx on users(public_id) where public_id is not null and public_id != '';
+      `);
     }
   } catch (migErr) {
     console.warn("Migration warning:", migErr.message);

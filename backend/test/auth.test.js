@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { randomInt } from "node:crypto";
 import { initDb, one, q } from "../src/db.js";
 import { config, isDemoPhone } from "../src/config.js";
+import { hashOtp } from "../src/routes/auth.js";
 
 test("auth: isDemoPhone correctly identifies demo and real numbers", () => {
   assert.equal(isDemoPhone("01700000000"), true);
@@ -13,7 +15,7 @@ test("auth: isDemoPhone correctly identifies demo and real numbers", () => {
   assert.equal(isDemoPhone("01999888777"), false);
 });
 
-test("auth: real phone generates random 6-digit OTP, rejects demo code, and accepts real OTP", async () => {
+test("auth: real phone generates random 6-digit OTP, rejects demo code, and accepts real OTP hash", async () => {
   await initDb();
 
   const realPhone = "01912345678";
@@ -23,30 +25,32 @@ test("auth: real phone generates random 6-digit OTP, rejects demo code, and acce
   await q("delete from otps where phone = $1", [realPhone]);
   await q("delete from users where phone = $1", [realPhone]);
 
-  // Simulate send-otp
-  const randomOtp = String(Math.floor(100000 + Math.random() * 900000));
+  // Simulate send-otp with crypto.randomInt and SHA-256 hash
+  const randomOtp = String(randomInt(100000, 1000000));
   assert.equal(randomOtp.length, 6);
   assert.notEqual(randomOtp, config.demoOtp);
 
+  const hashedOtp = hashOtp(randomOtp);
+
   await q(
-    "insert into otps (phone, code, email, expires_at) values ($1, $2, $3, datetime('now', '+5 minutes'))",
-    [realPhone, randomOtp, testEmail]
+    "insert into otps (phone, code, email, expires_at, attempts) values ($1, $2, $3, datetime('now', '+5 minutes'), 0)",
+    [realPhone, hashedOtp, testEmail]
   );
 
   // 1. Verify that '123456' is REJECTED for non-demo account
   const invalidAttempt = await one(
     "select * from otps where phone = $1 and code = $2 and expires_at > datetime('now')",
-    [realPhone, "123456"]
+    [realPhone, hashOtp("123456")]
   );
   assert.equal(invalidAttempt, null, "Demo code '123456' must not match real account OTP");
 
-  // 2. Verify that the generated OTP matches
+  // 2. Verify that the generated OTP hash matches
   const validAttempt = await one(
     "select * from otps where phone = $1 and code = $2 and expires_at > datetime('now')",
-    [realPhone, randomOtp]
+    [realPhone, hashedOtp]
   );
-  assert.ok(validAttempt, "Real OTP must match stored record");
-  assert.equal(validAttempt.code, randomOtp);
+  assert.ok(validAttempt, "Real OTP hash must match stored record");
+  assert.equal(validAttempt.code, hashedOtp);
   assert.equal(validAttempt.email, testEmail);
 
   // 3. Consume OTP and create user

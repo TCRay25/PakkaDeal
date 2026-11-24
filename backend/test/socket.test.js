@@ -5,7 +5,7 @@ import express from "express";
 import { io as Client } from "socket.io-client";
 import { initSocket, getIO, emitToDeal, emitToUser, emitToAdmin } from "../src/services/socket.js";
 import { makeToken } from "../src/http.js";
-import { initDb, one } from "../src/db.js";
+import { initDb, one, q } from "../src/db.js";
 
 let server;
 let serverPort;
@@ -82,9 +82,23 @@ test("socket.io: authenticated client joins user rooms", async () => {
 test("socket.io: room join, leave, and deal broadcast", async () => {
   const dealCode = "PD-REALTIME-TEST";
 
-  // Guest client joins deal room
-  const joinRes = await new Promise((resolve) => {
+  // Insert a deal where testUser is the seller
+  await q("delete from deals where code=$1", [dealCode]);
+  await q(
+    `insert into deals(code, seller_id, buyer_phone, buyer_name, address, product, price, total_amount, status)
+     values($1, $2, '01799887766', 'Test Buyer', 'Dhaka', 'Test Item', 1000, 1000, 'created')`,
+    [dealCode, testUser.id]
+  );
+
+  // Guest client attempt to join deal room MUST be rejected
+  const guestJoinRes = await new Promise((resolve) => {
     guestClient.emit("join_deal", { code: dealCode }, resolve);
+  });
+  assert.equal(guestJoinRes.ok, false);
+
+  // Authenticated participant (seller) joins deal room
+  const joinRes = await new Promise((resolve) => {
+    authClient.emit("join_deal", { code: dealCode }, resolve);
   });
 
   assert.equal(joinRes.ok, true);
@@ -92,7 +106,7 @@ test("socket.io: room join, leave, and deal broadcast", async () => {
 
   // Test broadcast to deal room
   const dealEventPromise = new Promise((resolve) => {
-    guestClient.once("deal:status_changed", (data) => resolve(data));
+    authClient.once("deal:status_changed", (data) => resolve(data));
   });
 
   emitToDeal(dealCode, "deal:status_changed", {
@@ -106,11 +120,14 @@ test("socket.io: room join, leave, and deal broadcast", async () => {
   assert.equal(receivedEvent.code, dealCode);
   assert.equal(receivedEvent.to_status, "held");
 
-  // Guest client leaves deal room
+  // Auth client leaves deal room
   const leaveRes = await new Promise((resolve) => {
-    guestClient.emit("leave_deal", { code: dealCode }, resolve);
+    authClient.emit("leave_deal", { code: dealCode }, resolve);
   });
   assert.equal(leaveRes.ok, true);
+
+  // Clean up
+  await q("delete from deals where code=$1", [dealCode]);
 });
 
 test("socket.io: real-time user notification delivery", async () => {

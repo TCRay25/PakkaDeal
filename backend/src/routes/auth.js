@@ -1,6 +1,8 @@
 import { Router } from "express";
+import { randomInt, createHash } from "node:crypto";
+import { rateLimit } from "express-rate-limit";
 import { config, isDemoPhone } from "../config.js";
-import { one, q } from "../db.js";
+import { one, q, generatePublicId } from "../db.js";
 import { auth, fail, isAdmin, makeToken } from "../http.js";
 import { sendSms } from "../services/smsService.js";
 import { verifyFirebaseIdToken } from "../services/firebaseAdmin.js";
@@ -8,7 +10,39 @@ import { verifyFirebaseIdToken } from "../services/firebaseAdmin.js";
 const router = Router();
 export const PHONE = /^01[3-9]\d{8}$/;
 
-router.post("/send-otp", async (req, res) => {
+export const hashOtp = (code) => createHash("sha256").update(String(code).trim()).digest("hex");
+
+// Rate limiters: /auth/send-otp 3/hour per phone and 10/hour per IP
+export const sendOtpPhoneLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 3,
+  keyGenerator: (req) => (req.body?.phone || "").trim() || "anonymous",
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { default: false },
+  message: { detail: "Too many OTP requests for this phone number. Please try again after an hour." },
+});
+
+export const sendOtpIpLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { default: false },
+  message: { detail: "Too many OTP requests from this IP address. Please try again after an hour." },
+});
+
+// Rate limiter: /auth/verify 10 per 15 min per IP
+export const verifyIpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { default: false },
+  message: { detail: "Too many verification attempts from this IP address. Please try again after 15 minutes." },
+});
+
+router.post("/send-otp", sendOtpIpLimiter, sendOtpPhoneLimiter, async (req, res) => {
   const phone = (req.body.phone || "").trim();
   const email = (req.body.email || "").trim().toLowerCase();
   if (!PHONE.test(phone)) {
@@ -17,22 +51,29 @@ router.post("/send-otp", async (req, res) => {
 
   // Demo accounts (e.g. 01711223344, 01755667788, 01700000000)
   if (isDemoPhone(phone)) {
+    const demoHashed = hashOtp(config.demoOtp);
+    await q("delete from otps where phone = $1", [phone]);
+    await q(
+      "insert into otps (phone, code, email, expires_at, attempts) values ($1, $2, $3, datetime('now', '+5 minutes'), 0)",
+      [phone, demoHashed, email]
+    );
+
     return res.json({
       sent: true,
       is_demo: true,
-      demo_otp: config.demoOtp,
-      message: `Demo account detected. Use demo code: ${config.demoOtp}`,
+      message: "Demo account detected.",
     });
   }
 
-  // Real account: generate 6-digit random OTP
-  const otp = String(Math.floor(100000 + Math.random() * 900000));
+  // Real account: generate 6-digit random OTP with crypto.randomInt
+  const otp = String(randomInt(100000, 1000000));
+  const hashedOtp = hashOtp(otp);
 
-  // Store in otps table (valid for 5 minutes)
+  // Store only the SHA-256 hash in otps table (valid for 5 minutes)
   await q("delete from otps where phone = $1", [phone]);
   await q(
-    "insert into otps (phone, code, email, expires_at) values ($1, $2, $3, datetime('now', '+5 minutes'))",
-    [phone, otp, email]
+    "insert into otps (phone, code, email, expires_at, attempts) values ($1, $2, $3, datetime('now', '+5 minutes'), 0)",
+    [phone, hashedOtp, email]
   );
 
   const simulatedEmail = email || `${phone.replace(/\D/g, "")}@user.pakkadeal.com`;
@@ -50,15 +91,15 @@ router.post("/send-otp", async (req, res) => {
   const smsMessage = `[PakkaDeal] আপনার অ্যাকাউন্ট ভেরিফিকেশন ওটিপি কোড হলো: ${otp}। এটি কারো সাথে শেয়ার করবেন না। মেয়াদ ৫ মিনিট।`;
   await sendSms(phone, smsMessage);
 
+  // Never return the OTP in any API response
   res.json({
     sent: true,
     is_demo: false,
     message: "আপনার মোবাইল নম্বরে ৬-সংখ্যার ভেরিফিকেশন ওটিপি পাঠানো হয়েছে।",
-    dev_otp: process.env.NODE_ENV === "production" ? undefined : otp,
   });
 });
 
-router.post("/verify", async (req, res) => {
+router.post("/verify", verifyIpLimiter, async (req, res) => {
   const { phone, otp, name = "", email = "", page_name = "", role = "user" } = req.body;
   const cleanPhone = (phone || "").trim();
   const cleanOtp = (otp || "").trim();
@@ -74,28 +115,37 @@ router.post("/verify", async (req, res) => {
     return fail(400, "ভেরিফিকেশন কোড লিখুন (Please enter verification code)");
   }
 
-  if (isDemoPhone(cleanPhone)) {
-    if (cleanOtp !== config.demoOtp) {
-      return fail(400, "Invalid verification code. Enter " + config.demoOtp);
-    }
-  } else {
-    const validOtp = await one(
-      "select * from otps where phone = $1 and code = $2 and expires_at > datetime('now')",
-      [cleanPhone, cleanOtp]
-    );
-    if (!validOtp) {
-      return fail(400, "ভুল বা মেয়াদোত্তীর্ণ ওটিপি কোড। পুনরায় কোড পাঠান। (Invalid or expired verification code)");
-    }
-    // Delete OTP once verified
-    await q("delete from otps where phone = $1", [cleanPhone]);
+  const hashedInput = hashOtp(cleanOtp);
+  const otpRecord = await one(
+    "select * from otps where phone = $1 and expires_at > datetime('now')",
+    [cleanPhone]
+  );
+
+  if (!otpRecord) {
+    return fail(400, "ভুল বা মেয়াদোত্তীর্ণ ওটিপি কোড। পুনরায় কোড পাঠান। (Invalid or expired verification code)");
   }
+
+  // Verify SHA-256 hash
+  if (otpRecord.code !== hashedInput) {
+    const attempts = (Number(otpRecord.attempts) || 0) + 1;
+    if (attempts >= 5) {
+      await q("delete from otps where phone = $1", [cleanPhone]);
+      return fail(400, "সর্বোচ্চ ভেরিফিকেশন চেষ্টা অতিক্রম করেছে। ওটিপি বাতিল করা হয়েছে। (Maximum verification attempts exceeded. Code deleted.)");
+    }
+    await q("update otps set attempts = $2 where phone = $1", [cleanPhone, attempts]);
+    return fail(400, "ভুল ওটিপি কোড। (Invalid verification code)");
+  }
+
+  // Delete OTP once verified successfully
+  await q("delete from otps where phone = $1", [cleanPhone]);
 
   let user = await one("select * from users where phone=$1", [cleanPhone]);
   if (!user) {
     user = await one(
-      `insert into users(phone, name, email, role, page_name, seller_trust, buyer_trust)
-       values($1, $2, $3, $4, $5, 75, 75) returning *`,
+      `insert into users(public_id, phone, name, email, role, page_name, seller_trust, buyer_trust, token_version)
+       values($1, $2, $3, $4, $5, $6, 75, 75, 1) returning *`,
       [
+        generatePublicId(),
         cleanPhone,
         cleanName || "User " + cleanPhone.slice(-4),
         cleanEmail,
@@ -121,7 +171,7 @@ router.post("/verify", async (req, res) => {
 
   const isUserAdmin = isAdmin(user);
   res.json({
-    token: makeToken(user.id),
+    token: makeToken(user),
     user,
     is_admin: isUserAdmin,
   });
@@ -165,12 +215,13 @@ router.post("/firebase-login", async (req, res) => {
   );
 
   if (!user) {
-    // New user registration
-    const userPhone = cleanBkash || `uid_${uid.slice(-10)}`;
+    // New user registration: NEVER copy bkash_number into phone!
+    const userPhone = decoded.phone_number || `uid_${uid.slice(-10)}`;
     user = await one(
-      `insert into users(uid, phone, name, email, bkash_number, bkash_type, bkash_verified, role, page_name, seller_trust, buyer_trust)
-       values($1, $2, $3, $4, $5, $6, 0, $7, $8, 75, 75) returning *`,
+      `insert into users(public_id, uid, phone, name, email, bkash_number, bkash_type, bkash_verified, role, page_name, seller_trust, buyer_trust, token_version)
+       values($1, $2, $3, $4, $5, $6, $7, 0, $8, $9, 75, 75, 1) returning *`,
       [
+        generatePublicId(),
         uid,
         userPhone,
         cleanName,
@@ -199,16 +250,15 @@ router.post("/firebase-login", async (req, res) => {
       await q("update users set page_name=$2 where id=$1", [user.id, cleanShop]);
       user.page_name = cleanShop;
     }
-    // If bKash info provided and previously unset or changed
+    // If bKash info provided and previously unset or changed: NEVER copy bkash_number into phone!
     if (cleanBkash && cleanBkash !== user.bkash_number) {
       await q(
-        "update users set bkash_number=$2, bkash_type=$3, bkash_verified=0, phone=$2 where id=$1",
+        "update users set bkash_number=$2, bkash_type=$3, bkash_verified=0 where id=$1",
         [user.id, cleanBkash, cleanBkashType]
       );
       user.bkash_number = cleanBkash;
       user.bkash_type = cleanBkashType;
       user.bkash_verified = 0;
-      user.phone = cleanBkash;
     }
   }
 
@@ -218,7 +268,7 @@ router.post("/firebase-login", async (req, res) => {
 
   const isUserAdmin = isAdmin(user);
   res.json({
-    token: makeToken(user.id),
+    token: makeToken(user),
     user,
     is_admin: isUserAdmin,
     profile_complete: Boolean(user.bkash_number),

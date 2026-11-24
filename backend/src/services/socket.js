@@ -1,6 +1,7 @@
 import { Server } from "socket.io";
 import { config } from "../config.js";
 import { verifyUserToken, isAdmin } from "../http.js";
+import { one } from "../db.js";
 
 let io = null;
 
@@ -100,16 +101,38 @@ export function initSocket(httpServer) {
       }
     });
 
-    // Join room for a specific deal (e.g. /deal/PD-XXXX)
-    socket.on("join_deal", ({ code }, callback) => {
-      if (code && typeof code === "string") {
+    // Join room for a specific deal (only buyer, seller or admin)
+    socket.on("join_deal", async ({ code }, callback) => {
+      try {
+        if (!socket.user) {
+          return callback?.({ ok: false, error: "Authentication required to join deal updates" });
+        }
+        if (!code || typeof code !== "string") {
+          return callback?.({ ok: false, error: "Invalid deal code" });
+        }
         const cleanCode = code.trim().toUpperCase();
-        const room = `deal:${cleanCode}`;
+        const deal = await one("select id, code, seller_id, buyer_id, buyer_phone from deals where upper(code)=$1", [cleanCode]);
+        if (!deal) {
+          return callback?.({ ok: false, error: "Deal not found" });
+        }
+
+        const isSeller = Number(socket.user.id) === Number(deal.seller_id);
+        const isBuyer = Number(socket.user.id) === Number(deal.buyer_id) || (
+          deal.buyer_phone && socket.user.phone && normalizePhone(socket.user.phone) === normalizePhone(deal.buyer_phone)
+        );
+        const isAdminUser = isAdmin(socket.user);
+
+        if (!isSeller && !isBuyer && !isAdminUser) {
+          return callback?.({ ok: false, error: "Access denied: only deal participants or admin can join" });
+        }
+
+        const room = `deal:${deal.code}`;
         socket.join(room);
-        console.log(`[SOCKET.IO] Socket ${socket.id} joined room ${room}`);
+        console.log(`[SOCKET.IO] Socket ${socket.id} (user ${socket.user.id}) joined room ${room}`);
         callback?.({ ok: true, room });
-      } else {
-        callback?.({ ok: false, error: "Invalid deal code" });
+      } catch (err) {
+        console.error("[SOCKET.IO JOIN DEAL ERROR]", err.message);
+        callback?.({ ok: false, error: "Failed to join deal room" });
       }
     });
 

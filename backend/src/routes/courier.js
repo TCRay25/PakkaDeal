@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { createHmac, createHash, timingSafeEqual } from "node:crypto";
 import { config } from "../config.js";
 import { one } from "../db.js";
 import { fail } from "../http.js";
@@ -7,15 +8,45 @@ import { updateDealTracking } from "../services/tracking.service.js";
 
 const router = Router();
 
-function verifyWebhookAuth(req) {
-  const incomingKey = req.headers["x-webhook-key"] || req.headers["x-webhook-secret"] || req.query.secret;
-  if (incomingKey && incomingKey === config.webhookKey) {
+function safeCompare(a, b) {
+  if (!a || !b || typeof a !== "string" || typeof b !== "string") return false;
+  const hashA = createHash("sha256").update(a).digest();
+  const hashB = createHash("sha256").update(b).digest();
+  return timingSafeEqual(hashA, hashB);
+}
+
+export function verifyWebhookAuth(req) {
+  // Always require a secret regardless of NODE_ENV, reject if WEBHOOK_KEY is unset
+  if (!config.webhookKey || typeof config.webhookKey !== "string" || config.webhookKey.trim().length < 32) {
+    return false;
+  }
+
+  // 1. Prefer HMAC-SHA256 over the raw body per courier
+  const signature =
+    req.headers["x-webhook-signature"] ||
+    req.headers["x-hub-signature-256"] ||
+    req.headers["x-signature"] ||
+    req.headers["x-courier-signature"];
+
+  if (signature) {
+    const cleanSig = String(signature).replace(/^sha256=/i, "").trim();
+    const raw = req.rawBody || (req.body ? JSON.stringify(req.body) : "");
+    const expectedSigHex = createHmac("sha256", config.webhookKey).update(raw).digest("hex");
+    if (safeCompare(cleanSig, expectedSigHex)) {
+      return true;
+    }
+  }
+
+  // 2. Secret read ONLY from a header (never from query string)
+  const incomingKey =
+    req.headers["x-webhook-key"] ||
+    req.headers["x-webhook-secret"] ||
+    req.headers["x-api-key"];
+
+  if (incomingKey && safeCompare(String(incomingKey).trim(), config.webhookKey.trim())) {
     return true;
   }
-  // If no webhookKey is set in dev, allow in non-production
-  if (process.env.NODE_ENV !== "production") {
-    return true;
-  }
+
   return false;
 }
 
@@ -24,11 +55,11 @@ function verifyWebhookAuth(req) {
  */
 router.post("/webhook", async (req, res) => {
   if (!verifyWebhookAuth(req)) {
-    fail(401, "Invalid webhook signature or x-webhook-key header");
+    fail(401, "Invalid webhook signature or secret header");
   }
 
-  const trackingId = req.body.tracking_id || req.body.tracking_code || req.body.consignment_id;
-  const status = req.body.status || req.body.delivery_status || req.body.order_status;
+  const trackingId = req.body?.tracking_id || req.body?.tracking_code || req.body?.consignment_id;
+  const status = req.body?.status || req.body?.delivery_status || req.body?.order_status;
 
   if (!trackingId) {
     fail(400, "tracking_id is required in webhook payload");

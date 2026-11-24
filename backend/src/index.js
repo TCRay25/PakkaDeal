@@ -32,7 +32,12 @@ app.use(cors({
   credentials: true,
 }));
 
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json({
+  limit: "2mb",
+  verify: (req, _res, buf) => {
+    req.rawBody = buf;
+  },
+}));
 
 // Health check
 app.get("/health", (_req, res) => res.json({
